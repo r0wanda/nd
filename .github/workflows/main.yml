@@ -1,0 +1,28 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: node:20.8
+    steps:
+      - uses: actions/checkout@v2
+      - name: creates docs
+        run: npx typedoc --out docs src/Node.ts src/Screen.ts
+
+      - name: pushes to docs
+        uses: cpina/github-action-push-to-another-repository@main
+        env:
+          API_TOKEN_GITHUB: ${{secrets.API_TOKEN_GITHUB}}
+        with:
+          source-directory: 'docs'
+          destination-github-username: 'r0wanda'
+          destination-repository-name: 'nd-docs'
+          user-email: rowan.dev.email@gmai.com
+          target-branch: main
