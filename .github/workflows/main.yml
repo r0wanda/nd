@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: creates docs
-        run: npm install && npx typedoc --out docs src/Node.ts src/Screen.ts
+        run: npm install && npm run docs
 
       - name: pushes to docs
         uses: cpina/github-action-push-to-another-repository@main
