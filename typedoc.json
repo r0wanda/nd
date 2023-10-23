@@ -1,4 +1,5 @@
 {
+    "name": "ND - New Design",
     "entryPoints": ["index.ts", "src/*.ts"],
     "out": "docs"
 }
