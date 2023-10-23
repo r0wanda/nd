@@ -8,7 +8,7 @@
     "pretest": "tsc",
     "test": "node index.js",
     "lint": "eslint .",
-    "docs": "typedoc ."
+    "docs": "typedoc --out docs src/*.ts"
   },
   "repository": {
     "type": "git",
