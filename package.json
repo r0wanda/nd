@@ -1,0 +1,38 @@
+{
+  "name": "newdesigns",
+  "version": "1.0.0",
+  "description": "New Designs - A working, fully-featured TUI creator",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "pretest": "tsc",
+    "test": "node index.js",
+    "lint": "eslint ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/r0wanda/nd.git"
+  },
+  "keywords": [
+    "tui",
+    "terminal",
+    "interface"
+  ],
+  "author": "Rowan",
+  "license": "GPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/r0wanda/nd/issues"
+  },
+  "homepage": "https://github.com/r0wanda/nd#readme",
+  "dependencies": {
+    "@types/node": "^20.8.7",
+    "ansi-escapes": "^6.2.0",
+    "is-interactive": "^2.0.0"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.8.0",
+    "@typescript-eslint/parser": "^6.8.0",
+    "eslint": "^8.52.0",
+    "typescript": "^5.2.2"
+  }
+}
