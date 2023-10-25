@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "pretest": "tsc",
-    "test": "node index.js",
+    "test": "node dist/index.js",
     "lint": "eslint .",
     "docs": "typedoc --out docs src/*.ts"
   },
@@ -27,8 +27,10 @@
   "homepage": "https://github.com/r0wanda/nd#readme",
   "dependencies": {
     "@types/node": "^20.8.7",
+    "@types/tinycolor2": "^1.4.5",
     "ansi-escapes": "^6.2.0",
-    "is-interactive": "^2.0.0"
+    "is-interactive": "^2.0.0",
+    "tinycolor2": "^1.6.0"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^6.8.0",

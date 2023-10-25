@@ -1,9 +1,14 @@
 import type Screen from './Screen.js';
 import { EventEmitter } from 'node:events';
 
+/**
+ * Miscellaneous data to be stored with a Node
+ */
 export interface NodeData {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [key: string]: any;
 }
+
 export default class Node extends EventEmitter {
     screen?: Screen;
     parent?: Node;
@@ -11,10 +16,37 @@ export default class Node extends EventEmitter {
     _data?: NodeData;
     $?: NodeData;
     type: string;
+    width: number;
+    height: number;
     constructor() {
         super();
         this.type = 'node';
         this.children = [];
+        this.width = this.height = 0;
+    }
+    /**
+     * Add node to screen
+     * @param scr The screen to 
+     * @returns 
+     */
+    setScreen(scr?: Screen, nodeAdded = false) {
+        // screen cant have a screen duhrrr
+        if (this.type === 'screen') return;
+        this.screen = scr;
+        if (!nodeAdded) this.screen?.append(this);
+        if (scr) this.emit('attach', scr);
+        else this.emit('detach', scr);
+    }
+    removeScreen() {
+        // screen is undefined now :)
+        this.setScreen();
+    }
+    setParent(parent?: Node) {
+        const p = this.parent;
+        this.parent = parent;
+        if (!parent && p) this.emit('remove', parent);
+        else if (parent && p) this.emit('reparent', parent, p);
+        else if (parent) this.emit('adopt', parent);
     }
     /**
      * Prepend node to the beginning of children
@@ -27,6 +59,7 @@ export default class Node extends EventEmitter {
             else return;
         }
         this.children.unshift(node);
+        this.emit('_node', node);
     }
     /**
      * Append node to the end of children
@@ -39,6 +72,7 @@ export default class Node extends EventEmitter {
             else return;
         }
         this.children.push(node);
+        this.emit('_node', node);
     }
     /**
      * Alias of append
@@ -66,6 +100,7 @@ export default class Node extends EventEmitter {
             else return;
         }
         this.children.splice(i, 1);
+        this.emit('_node', node);
     }
     /**
      * Insert node into children at a specific index
@@ -86,5 +121,34 @@ export default class Node extends EventEmitter {
             if (throwOnInvalid || throwOnInvaidIndexes) throw new Error('Invalid index (inserting child)');
             else return;
         } else this.children.splice(i, 0, node);
+        this.emit('_node', node);
+    }
+    /**
+     * Insert node into children before a certain node
+     * @param node The node to insert
+     * @param ref The node to insert before
+     * @param throwOnInvalid Whether or not to throw an error if the index or type is invalid
+     * @param acceptInvalidIndexes Whether or not to accept indexes greater than the length of children
+     * @param throwOnInvaidIndexes Whether or not to throw an error if the index (specifically) is invalid
+     */
+    insertBefore(node: Node, ref: Node, throwOnInvalid = false, acceptInvalidIndexes = true, throwOnInvaidIndexes = false, throwOnInvalidType = false): void {
+        this.insert(node, this.children.indexOf(ref), throwOnInvalid, acceptInvalidIndexes, throwOnInvaidIndexes, throwOnInvalidType);
+    }
+    /**
+     * Insert node into children after a certain node
+     * @param node The node to insert
+     * @param ref The node to insert after
+     * @param throwOnInvalid Whether or not to throw an error if the index or type is invalid
+     * @param acceptInvalidIndexes Whether or not to accept indexes greater than the length of children
+     * @param throwOnInvaidIndexes Whether or not to throw an error if the index (specifically) is invalid
+     */
+    insertAfter(node: Node, ref: Node, throwOnInvalid = false, acceptInvalidIndexes = true, throwOnInvaidIndexes = false, throwOnInvalidType = false): void {
+        this.insert(node, this.children.indexOf(ref) + 1, throwOnInvalid, acceptInvalidIndexes, throwOnInvaidIndexes, throwOnInvalidType);
+    }
+    /**
+     * Remove node from parent, if it exists
+     */
+    detach() {
+        this.parent?.remove(this);
     }
 }

@@ -56,10 +56,6 @@ export interface Dims {
     columns: number;
 }
 
-export default interface Screen extends Node {
-    on(ev: 'resize', listen: (d: Dims) => void): this;
-}
-
 export default class Screen extends Node {
     opts: ScreenOptions;
     focused?: Node;
@@ -98,8 +94,10 @@ export default class Screen extends Node {
                 d.width = d.cols = d.columns = 0;
                 d.height = d.rows = 0;
                 this.emit('resize', d);
-                this.#handleResize();
             }, this.opts.resizeTimeout);
+        });
+        this.on('_node', (n: Node) => {
+            n.setScreen(this, true);
         });
     }
     /**
@@ -114,7 +112,7 @@ export default class Screen extends Node {
     write(data: string | Uint8Array): void {
         this.opts.stdout.write(data);
     }
-    #handleResize() {
-        //TODO
+    handleResize() {
+        //TODO   
     }
 }
