@@ -1,5 +1,6 @@
 import Node from './Node.js';
 import ansi from 'ansi-escapes';
+import process from 'node:process';
 import isIntr from 'is-interactive';
 
 export interface ScreenOptions {
@@ -61,10 +62,26 @@ export default class Screen extends Node {
     focused?: Node;
     width: number;
     height: number;
-    cols: number;
-    rows: number;
+    get cols() {
+        return this.width;
+    }
+    set cols(v: number) {
+        this.width = v;
+    }
+    get columns() {
+        return this.width;
+    }
+    set columns(v: number) {
+        this.width = v;
+    }
+    get rows() {
+        return this.height;
+    }
+    set rows(v: number) {
+        this.height = v;
+    }
     #resizeTimer?: ReturnType<typeof setTimeout>;
-    constructor(opts: Partial<ScreenOptions>) {
+    constructor(opts: Partial<ScreenOptions> = {}) {
         super();
 
         this.type = 'screen';
@@ -74,31 +91,40 @@ export default class Screen extends Node {
             disableChecks: opts.disableChecks || false,
             interactive: opts.interactive || opts.disableChecks ? true : isIntr(),
             bitDepth: opts.bitDepth || opts.disableChecks ? 16 : process.stdout.getColorDepth(),
-            hideCursor: opts.hideCursor || true,
+            hideCursor: opts.hideCursor || false, //change when done
             stdout: opts.stdout || process.stdout,
-            fullScreen: opts.fullScreen || true,
+            fullScreen: opts.fullScreen || false, // this too
         }
 
         // option checks
         if (!this.opts.interactive) throw new Error('Terminal is not interactive');
         this.opts.hideCursor && this.write(ansi.cursorHide);
         this.opts.fullScreen && this.write(ansi.enterAlternativeScreen);
+        process.on('exit', this.exit.bind(this));
 
         // stdout stuff
-        this.width = this.cols = this.opts.stdout.columns;
-        this.height = this.rows = this.opts.stdout.rows;
+        this.width = this.opts.stdout.columns;
+        this.height = this.opts.stdout.rows;
+        this.on('resize', (d: Dims) => {
+            this.width = d.cols;
+            this.height = d.rows;
+        });
         this.opts.stdout.on('resize', () => {
             clearTimeout(this.#resizeTimer); // does nothing if undefined
             this.#resizeTimer = setTimeout(() => {
-                const d: Dims = <Dims>{};
-                d.width = d.cols = d.columns = 0;
-                d.height = d.rows = 0;
+                const d = this.constructDims(this.opts.stdout.rows, this.opts.stdout.columns);
                 this.emit('resize', d);
             }, this.opts.resizeTimeout);
         });
         this.on('_node', (n: Node) => {
             n.setScreen(this, true);
         });
+    }
+    constructDims(rows: number, cols: number) {
+        const d: Dims = <Dims>{};
+        d.width = d.cols = d.columns = cols;
+        d.height = d.rows = rows;
+        return d;
     }
     /**
      * Exit the screen
@@ -111,8 +137,5 @@ export default class Screen extends Node {
     }
     write(data: string | Uint8Array): void {
         this.opts.stdout.write(data);
-    }
-    handleResize() {
-        //TODO   
     }
 }

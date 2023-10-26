@@ -1,5 +1,7 @@
 import Node from './Node.js';
+import Screen from './Screen.js';
 import tc from 'tinycolor2';
+import length from 'string-length';
 
 export type Keyword = number | string | 'center' | 'left' | 'right' | 'shrink';
 export type Color = tc.ColorInput | 'default';
@@ -98,7 +100,17 @@ export interface Style {
 }
 
 export interface ElementOptions {
+    /**
+     * Parent Node
+     */
     parent?: Node;
+    /**
+     * Screen Node
+     */
+    screen?: Node
+    /**
+     * Children of element
+     */
     children?: Array<Node>;
     /**
      * Element foreground color. Try to put this under "style", for sake of organization
@@ -286,10 +298,18 @@ export default class Element extends Node {
     content: string;
     opts: OptionsNoStyle;
     style: Style;
+    readonly nPer: Percentage;
     constructor(opts: Partial<ElementOptions>) {
         super();
         this.type = 'element';
         this.parent = opts.parent instanceof Node ? opts.parent : undefined;
+        if (opts.screen instanceof Screen) this.setScreen(opts.screen);
+        else if (this.parent?.screen instanceof Screen) this.setScreen(this.parent.screen);
+        this.children = opts.children && Array.isArray(opts.children) && opts.children.length > 0 ? opts.children : [];
+        this.nPer = {
+            percent: -1,
+            offset: 0
+        }
         this.opts = {
             bold: opts.bold || false,
             underline: opts.underline || false,
@@ -322,27 +342,94 @@ export default class Element extends Node {
             hover: opts.style?.hover
         }
         this.content = this.opts.content;
+        this.width = this.parseKeywordWH(this.opts.width, 'w');
+        this.height = this.parseKeywordWH(this.opts.height, 'h');
         this.left = this.right = this.top = this.bottom = 0;
         this.aleft = this.aright = this.atop = this.abottom = 0;
     }
-    isPercentage(k: Keyword): boolean {
-        // checks if percentage is 
-        return typeof k === 'number' ? false : !isNaN(Number(k.replace('%', '').replace(/\+\-/, '')));
+    /**
+     * Is keyword a percentage (50%, 25%+1, 70%-1, etc...)
+     */
+    isPercentage(k: Keyword): k is string { //
+        return k ? typeof k === 'number' ? false : !isNaN(Number(k.replace('%', '').replace(/[+-]/, ''))) : false;
     }
+    /**
+     * Is percentage nPer (iNvalid Percentage)
+     * @param p The percentage to check
+     */
+    isNPer(p: Percentage): boolean {
+        return p.percent < 0;
+    }
+    wh(wh: 'w' | 'h' = 'w'): 'width' | 'height' {
+        return wh === 'w' ? 'width' : 'height'
+    }
+    /**
+     * Parse a percentage string to the percent and offset
+     * @param k The keyword to grab percentage from
+     * @returns The percentage and offset as a Percentage object, or nPer
+     */
     parsePercentage(k: Keyword): Percentage {
-        if ()
-    }
-    parseKeywordW(k: Keyword, parent: Node): number {
-        switch (k) {
-            case 'shrink': return this.content.length;
-            case 'half': return Math.round(parent.width / 2);
-            default:
-                if (this.isPercentage(k))
+        if (!k || !this.isPercentage(k)) return this.nPer;
+        const spl = k.replace('%', '').split(/[+-]/);
+        if (spl.length === 1 && !isNaN(Number(spl[0]))) {
+            return {
+                percent: Number(spl[0]),
+                offset: 0
+            }
+        } else if (spl.length !== 2) return this.nPer;
+        else if (!k.match(/[+-]/)) return this.nPer;
+        const r: Percentage = {
+            percent: Number(spl[0]),
+            offset: k.includes('+') ? Number(spl[1]) : -Number(spl[1])
         }
+        if (r.percent < 0 || r.percent > 100) return this.nPer;
+        return r;
     }
+    /**
+     * Calculate a percentage releative to a Node
+     * @param p The percentage
+     * @param wh The percentage direction
+     * @param parent The reference Node
+     * @returns The number of characters
+     */
+    calcPercentage(p: Percentage, wh: 'w' | 'h', parent?: Node): number {
+        if (!parent) parent = this.parent || this.screen;
+        if (!parent) return 0;
+        if (this.isNPer(p)) return 0;
+        return Math.round(parent[this.wh(wh)] / 100 * p.percent + p.offset)
+    }
+    /**
+     * Parse Partially Processed Keyword
+     * Parse a keyword once all cases other than number and percentage
+     * @param k The keyword to parse
+     * @param parent The reference Node
+     * @param wh The percentage direction
+     */
+    pPPK(k: Keyword, parent: Node, wh: 'w' | 'h'): number {
+        const num = Number(k);
+        if (!isNaN(num)) return num;
+        const p = this.parsePercentage(k);
+        return this.calcPercentage(p, wh, parent);
+    }
+    /**
+     * Parse a width or height keyword to number of characters
+     * @param k The keyword to parse
+     * @param parent The reference Node
+     * @returns The number of characters
+     */
     parseKeywordWH(k: Keyword, wh: 'w' | 'h' = 'w', parent?: Node): number {
         if (!parent) parent = this.parent || this.screen;
         if (!parent) return 0;
-        if (wh === 'w') return this.parseKeywordW(k, parent);
+        if (wh !== 'w' && wh !== 'h') return 0;
+        switch (k) {
+            case 'shrink': return length(this.content);
+            case 'half': return Math.round(parent[this.wh(wh)] / 2);
+            default: {
+                const num = Number(k);
+                if (!isNaN(num)) return num;
+                const p = this.parsePercentage(k);
+                return this.calcPercentage(p, wh, parent);
+            }
+        }
     }
 }
