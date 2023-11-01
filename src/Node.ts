@@ -9,6 +9,10 @@ export interface NodeData {
     [key: string]: any;
 }
 
+/**
+ * The base node, which is extended by Element and Screen. Very little functionality, mainly parent, children, and screen.
+ * @abstract
+ */
 export default class Node extends EventEmitter {
     screen?: Screen;
     parent?: Node;
@@ -29,13 +33,14 @@ export default class Node extends EventEmitter {
      * @param scr The screen to 
      * @returns 
      */
-    setScreen(scr?: Screen, nodeAdded = false) {
+    setScreen(scr?: Screen, nodeAdded = false): number {
         // screen cant have a screen duhrrr
-        if (this.type === 'screen') return;
+        if (this.type === 'screen') return -1;
         this.screen = scr;
         if (!nodeAdded) this.screen?.append(this);
         if (scr) this.emit('attach', scr);
         else this.emit('detach', scr);
+        return scr ? scr.children.length : -1;
     }
     removeScreen() {
         // screen is undefined now :)
@@ -150,5 +155,24 @@ export default class Node extends EventEmitter {
      */
     detach() {
         this.parent?.remove(this);
+    }
+    /**
+     * Emit event for self, and recursively emit same event for all descendants
+     * @param ev The event to emit
+     * @param args The args to pass to the event
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    emitDescendants(ev: string, ...args: Array<any>) {
+        this.emit(ev, ...args);
+        for (const c of this.children) c.emitDescendants(ev, ...args);
+    }
+    /**
+     * Recursively emit event for all descendants, excluding self
+     * @param ev The event to emit
+     * @param args The args to pass to the event
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    emitDescendantsExSelf(ev: string, ...args: Array<any>) {
+        for (const c of this.children) c.emitDescendants(ev, ...args);
     }
 }

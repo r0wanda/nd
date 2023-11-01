@@ -2,11 +2,12 @@
   "name": "newdesigns",
   "version": "1.0.0",
   "description": "New Designs - A working, fully-featured TUI creator",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "type": "module",
   "scripts": {
     "pretest": "tsc",
-    "test": "node dist/index.js",
+    "test": "node dist/index.js 2> errfile",
     "lint": "eslint .",
     "docs": "typedoc --out docs src/*.ts"
   },

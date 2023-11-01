@@ -2,8 +2,14 @@ import Element from './src/Element.js';
 import Screen from './src/Screen.js';
 
 const scr = new Screen();
-const e = new Element({
+new Element({
+    fg: 'red',
+    bg: 'green',
+    content: 'hello world',
     screen: scr,
-    width: '100%'
+    width: '50%',
+    height: '50%',
+    left: '10%',
+    top: '10%',
 });
-console.log(e);
+scr.render();

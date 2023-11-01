@@ -1,10 +1,12 @@
 import Node from './Node.js';
+import Mat from './Mat.js';
 import Screen from './Screen.js';
 import tc from 'tinycolor2';
 import length from 'string-length';
 
-export type Keyword = number | string | 'center' | 'left' | 'right' | 'shrink';
+export type Keyword = number | string | 'center' | 'left' | 'right' | 'top' | 'bottom' | 'shrink' | 'calc';
 export type Color = tc.ColorInput | 'default';
+export type Tblr = 'top' | 'bottom' | 'left' | 'right';
 
 export interface Padding {
     /**
@@ -93,10 +95,32 @@ export interface Style {
      * Element background color.
      */
     bg?: Color;
+    /**
+     * Border options
+     */
     border?: Border;
+    /**
+     * Scrollbar options
+     */
     scrollbar?: Scrollbar;
+    /**
+     * Alternate style on focus
+     */
     focus?: Omit<Style, 'focus'>;
+    /**
+     * Alternnate style on hover
+     */
     hover?: Omit<Style, 'hover'>;
+}
+export interface StyleReq extends Style {
+    /**
+     * Element background color.
+     */
+    fg: Color;
+    /**
+     * Element foreground color.
+     */
+    bg: Color;
 }
 
 export interface ElementOptions {
@@ -123,11 +147,11 @@ export interface ElementOptions {
     /**
      * Element is bold
      */
-    bold: boolean;
+    bold?: boolean;
     /**
      * Element is underlined
      */
-    underline: boolean;
+    underline?: boolean;
     /**
      * The border options. Try to put this under "style", for sake of organization
      */
@@ -135,19 +159,19 @@ export interface ElementOptions {
     /**
      * Text content. Default ""
      */
-    content: string;
+    content?: string;
     /**
      * Element will focus on click. Default true
      */
-    clickable: boolean;
+    clickable?: boolean;
     /**
      * Element is focused. Default false
      */
-    focused: boolean;
+    focused?: boolean;
     /**
      * Element is hidden. Default false
      */
-    hidden: boolean;
+    hidden?: boolean;
     /**
      * A text label (for borders). Defalt none
      */
@@ -155,21 +179,21 @@ export interface ElementOptions {
     //TODO: hovertext
 
     /**
-     * Text alignment
+     * Text alignment. Default center.
      */
-    align: 'left' | 'center' | 'right';
+    align?: 'left' | 'center' | 'right';
     /**
-     * Text alignment, but vertical
+     * Text alignment, but vertical. Default center
      */
-    valign: 'top' | 'center' | 'bottom';
+    valign?: 'top' | 'center' | 'bottom';
     /**
-     * Shrink to text content.
+     * Shrink to text content (overrides width and height). Default false
      */
-    shrink: boolean;
+    shrink?: boolean;
     /**
-     * 
+     * Element padding (distance from edge of element to content). Default 0
      */
-    padding: number | Padding;
+    padding?: number | Padding;
     /**
      * Element width. See type Keyword for more.
      * The "shrink" and "half" keywords are the only ones allowed
@@ -184,42 +208,42 @@ export interface ElementOptions {
      * Parent-relative left offset.
      * "center", "left", and "right" are the only allowed keywords.
      */
-    left: Keyword;
+    left?: Keyword;
     /**
      * Parent-relative right offset.
-     * Keywords are not allowed
-     */
-    right?: number;
-    /**
-     * Parent-relative top offset.
      * "center", "left", and "right" are the only allowed keywords.
      */
-    top: Keyword;
+    right?: Keyword;
+    /**
+     * Parent-relative top offset.
+     * "center", "top", and "bottom" are the only allowed keywords.
+     */
+    top?: Keyword;
     /**
      * Parent-relative bottom offset.
-     * Keywords are not allowed
+     * "center", "top", and "bottom" are the only allowed keywords.
      */
-    bottom?: number;
+    bottom?: Keyword;
     /**
      * Position. Includes all above terms
      */
     position?: {
         /**
-         * Text alignment
-         */
-        align: 'left' | 'center' | 'right';
+     * Text alignment. Default center.
+     */
+        align?: 'left' | 'center' | 'right';
         /**
-         * Text alignment, but vertical
+         * Text alignment, but vertical. Default center
          */
-        valign: 'top' | 'center' | 'bottom';
+        valign?: 'top' | 'center' | 'bottom';
         /**
-         * Shrink to text content.
+         * Shrink to text content (overrides width and height). Default false
          */
-        shrink: boolean;
+        shrink?: boolean;
         /**
-         * 
+         * Element padding (distance from edge of element to content). Default 0
          */
-        padding: number | Padding;
+        padding?: number | Padding;
         /**
          * Element width. See type Keyword for more.
          * The "shrink" and "half" keywords are the only ones allowed
@@ -234,58 +258,70 @@ export interface ElementOptions {
          * Parent-relative left offset.
          * "center", "left", and "right" are the only allowed keywords.
          */
-        left: Keyword;
+        left?: Keyword;
         /**
          * Parent-relative right offset.
-         * Keywords are not allowed
-         */
-        right?: number;
-        /**
-         * Parent-relative top offset.
          * "center", "left", and "right" are the only allowed keywords.
          */
-        top: Keyword;
+        right?: Keyword;
+        /**
+         * Parent-relative top offset.
+         * "center", "top", and "bottom" are the only allowed keywords.
+         */
+        top?: Keyword;
         /**
          * Parent-relative bottom offset.
-         * Keywords are not allowed
+         * "center", "top", and "bottom" are the only allowed keywords.
          */
-        bottom?: number;
+        bottom?: Keyword;
     }
     /**
      * Element can scroll (if overflow happens). Default true
      */
-    scrollable: boolean;
+    scrollable?: boolean;
     /**
      * Same as scrollable
      */
-    scroll: boolean;
+    scroll?: boolean;
     /**
      * Background character. Default whitespace (" ")
      */
-    ch: string;
+    ch?: string;
     /**
      * Element can be dragged by mouse.
      */
-    draggable: boolean;
+    draggable?: boolean;
     /**
      * Same as draggable
      */
-    drag: boolean;
+    drag?: boolean;
     /**
      * Element has a offset shadow.
      */
-    shadow: boolean;
+    shadow?: boolean;
     /**
      * Element style.
      */
-    style: Style;
+    style?: Style;
+    /**
+     * When calculating positioning/size, whether to round down (floor). Default true (round down), change to false to round up
+     */
+    floor?: boolean;
+    /**
+     * Whether or not to resize the element if it overflowsoff screen. Default true, if false, cropping will still be done on render to prevent icky stuff
+     */
+    resize?: boolean;
 }
-export type OptionsNoStyle = Omit<ElementOptions, 'fg' | 'bg' | 'style' | 'border' | 'position' | 'scroll' | 'drag'>
+export type OptionsNoStyle = Omit<ElementOptions, 'fg' | 'bg' | 'style' | 'border' | 'position' | 'scroll' | 'drag' | 'parent' | 'screen' | 'children'>
 export interface Percentage {
     percent: number;
     offset: number;
 }
 
+/**
+ * The base Element class, which all other rendered objects descend from.
+ * @abstract
+ */
 export default class Element extends Node {
     left: number;
     right: number;
@@ -295,16 +331,33 @@ export default class Element extends Node {
     aright: number;
     atop: number;
     abottom: number;
-    content: string;
-    opts: OptionsNoStyle;
-    style: Style;
+    get content(): string {
+        return this.#content;
+    }
+    set content(val: string) {
+        this.#content = val;
+        this.contentLen = length(val);
+        this.contentHeight = (val.match(/\n/g) || []).length + 1;
+        this.genContent();
+    }
+    #content: string;
+    contentLen: number;
+    contentHeight: number;
+    opts: Required<OptionsNoStyle>;
+    style: StyleReq;
+    index: number;
+    contentMat: Mat;
     readonly nPer: Percentage;
-    constructor(opts: Partial<ElementOptions>) {
+    constructor(opts: ElementOptions) {
         super();
         this.type = 'element';
         this.parent = opts.parent instanceof Node ? opts.parent : undefined;
-        if (opts.screen instanceof Screen) this.setScreen(opts.screen);
-        else if (this.parent?.screen instanceof Screen) this.setScreen(this.parent.screen);
+        this.on('resize', () => {
+            this.calcPos();
+        });
+        if (opts.screen instanceof Screen) this.index = this.setScreen(opts.screen);
+        else if (this.parent?.screen instanceof Screen) this.index = this.setScreen(this.parent.screen);
+        else throw new Error('No screen');
         this.children = opts.children && Array.isArray(opts.children) && opts.children.length > 0 ? opts.children : [];
         this.nPer = {
             percent: -1,
@@ -317,21 +370,23 @@ export default class Element extends Node {
             clickable: opts.clickable || false,
             focused: opts.focused || false,
             hidden: opts.hidden || false,
-            label: opts.label,
+            label: opts.label || '',
             align: opts.align || opts.position?.align || 'center',
             valign: opts.valign || opts.position?.valign || 'center',
             shrink: opts.shrink || opts.position?.shrink || false,
             padding: opts.padding || opts.position?.padding || 0,
             width: opts.width || opts.position?.width || 'shrink',
             height: opts.height || opts.position?.height || 'shrink',
-            left: opts.left || opts.position?.left || 0,
-            right: opts.right || opts.position?.right,
-            top: opts.top || opts.position?.top || 0,
-            bottom: opts.bottom || opts.position?.bottom,
+            left: opts.left || opts.position?.left || 'calc',
+            right: opts.right || opts.position?.right || 'calc',
+            top: opts.top || opts.position?.top || 'calc',
+            bottom: opts.bottom || opts.position?.bottom || 'calc',
             scrollable: opts.scrollable || opts.scroll || true,
             ch: opts.ch || ' ',
             draggable: opts.draggable || opts.drag || false,
-            shadow: opts.shadow || false
+            shadow: opts.shadow || false,
+            floor: opts.floor || true,
+            resize: opts.resize || true
         }
         this.style = {
             fg: opts.style?.fg || opts.fg || 'default',
@@ -341,11 +396,44 @@ export default class Element extends Node {
             focus: opts.style?.focus,
             hover: opts.style?.hover
         }
+        // defaults to make typescript happy
+        this.width = this.height =
+        this.left = this.right = this.top = this.bottom =
+        this.aleft = this.aright = this.atop = this.abottom = 0;
+        // actually set position
+        if ((this.opts.left === 'calc' && this.opts.right === 'calc') || (this.opts.top === 'calc' && this.opts.bottom === 'calc'))
+            throw new Error('No 2 opposite position arguments (left/right, top/bottom) can both be calculated.');
+        this.calcPos();
+        // content (and ts defaults)
+        this.#content = '';
+        this.contentLen = this.contentHeight = 0;
+        this.contentMat = new Mat(0, 0);
         this.content = this.opts.content;
+    }
+    /**
+     * Set content (reccomended to just set the "content" property)
+     * @param val The content value
+     */
+    setContent(val: string) {
+        this.content = val;
+    }
+    calcPos(): void {
+        // width/height must be defined first
         this.width = this.parseKeywordWH(this.opts.width, 'w');
         this.height = this.parseKeywordWH(this.opts.height, 'h');
-        this.left = this.right = this.top = this.bottom = 0;
-        this.aleft = this.aright = this.atop = this.abottom = 0;
+        console.error(this.width, this.height);
+        if (this.screen && this.opts.resize && this.width + this.aleft > this.screen.width) this.width = this.screen.width - this.aleft;
+        if (this.screen && this.opts.resize && this.height + this.atop > this.screen.height) this.height = this.screen.height - this.atop;
+        console.error(this.width, this.height);
+        // then margins
+        this.left = this.parseKeywordMargin(this.opts.left, 'left');
+        this.right = this.parseKeywordMargin(this.opts.right, 'right');
+        this.top = this.parseKeywordMargin(this.opts.top, 'top');
+        this.bottom = this.parseKeywordMargin(this.opts.bottom, 'bottom');
+        this.aleft = this.parseKeywordMargin(this.opts.left, 'left', this.screen);
+        this.aright = this.parseKeywordMargin(this.opts.right, 'right', this.screen);
+        this.atop = this.parseKeywordMargin(this.opts.top, 'top', this.screen);
+        this.abottom = this.parseKeywordMargin(this.opts.bottom, 'bottom', this.screen);
     }
     /**
      * Is keyword a percentage (50%, 25%+1, 70%-1, etc...)
@@ -360,8 +448,72 @@ export default class Element extends Node {
     isNPer(p: Percentage): boolean {
         return p.percent < 0;
     }
+    /**
+     * Check if string is 'w' or 'h'
+     * @param wh The string to check
+     */
+    isWh(wh: string): wh is 'w' | 'h' {
+        return ['w', 'h'].includes(wh);
+    }
+    /**
+     * Check if string is 'top', 'bottom', 'left, or 'right'
+     * @param tblr The string to check
+     */
+    isTblr(tblr: string): tblr is Tblr {
+        return ['top', 'bottom', 'left', 'right'].includes(tblr);
+    }
+    /**
+     * Convert a string from w or h to width or height
+     * @param wh The string to convert
+     * @returns 
+     */
     wh(wh: 'w' | 'h' = 'w'): 'width' | 'height' {
         return wh === 'w' ? 'width' : 'height'
+    }
+    /**
+     * Round a number according to options. Will consistently either round up or down.
+     */
+    round(n: number): number {
+        return Math[this.opts.floor ? 'floor' : 'ceil'](n);
+    }
+    /**
+     * Generate a Mat from the content
+     */
+    genContent() {
+        const mat =  new Mat(this.width, this.height, '');
+        // calculate the valign
+        let t = 0;
+        switch (this.opts.valign) {
+            case 'top':
+                t = 0;
+                break;
+            case 'bottom':
+                t = this.height - this.contentHeight;
+                break;
+            default: t = this.round(this.height / 2 - this.contentHeight / 2);
+        }
+        // calc align
+        let l = 0;
+        switch (this.opts.align) {
+            case 'left':
+                l = 0;
+                break;
+            case 'right':
+                l = this.width - this.contentLen;
+                break;
+            default: l = this.round(this.width / 2 - this.contentLen / 2);
+        }
+        console.error(l, this.width - l - this.contentLen)
+        // render
+        const c = new Mat(this.width, this.contentHeight, '');
+        const rows = this.content.split('\n');
+        for (let y = 0; y < rows.length; y++) {
+            for (let x = 0; x < rows[y].length; x++) {
+                c.xy(l + x, y, rows[y].charAt(x));
+            }
+        }
+        mat.overlay(0, t, c);
+        this.contentMat = mat;
     }
     /**
      * Parse a percentage string to the percent and offset
@@ -388,32 +540,29 @@ export default class Element extends Node {
     /**
      * Calculate a percentage releative to a Node
      * @param p The percentage
-     * @param wh The percentage direction
+     * @param type The percentage direction
      * @param parent The reference Node
      * @returns The number of characters
      */
-    calcPercentage(p: Percentage, wh: 'w' | 'h', parent?: Node): number {
+    calcPercentage(p: Percentage, type: 'w' | 'h' | Tblr, parent?: Node): number {
         if (!parent) parent = this.parent || this.screen;
         if (!parent) return 0;
         if (this.isNPer(p)) return 0;
-        return Math.round(parent[this.wh(wh)] / 100 * p.percent + p.offset)
-    }
-    /**
-     * Parse Partially Processed Keyword
-     * Parse a keyword once all cases other than number and percentage
-     * @param k The keyword to parse
-     * @param parent The reference Node
-     * @param wh The percentage direction
-     */
-    pPPK(k: Keyword, parent: Node, wh: 'w' | 'h'): number {
-        const num = Number(k);
-        if (!isNaN(num)) return num;
-        const p = this.parsePercentage(k);
-        return this.calcPercentage(p, wh, parent);
+        return this.isWh(type) ? Math.round(parent[this.wh(type)] / 100 * p.percent + p.offset) : (() => {
+            switch (type) {
+                case 'top':
+                case 'bottom':
+                    return this.round(parent.height / 100 * p.percent + p.offset);
+                case 'left':
+                case 'right':
+                    return this.round(parent.width / 100 * p.percent + p.offset);
+            }
+        })();
     }
     /**
      * Parse a width or height keyword to number of characters
      * @param k The keyword to parse
+     * @param wh The keyword direction
      * @param parent The reference Node
      * @returns The number of characters
      */
@@ -422,13 +571,83 @@ export default class Element extends Node {
         if (!parent) return 0;
         if (wh !== 'w' && wh !== 'h') return 0;
         switch (k) {
-            case 'shrink': return length(this.content);
-            case 'half': return Math.round(parent[this.wh(wh)] / 2);
+            case 'shrink': return this.contentLen;
+            case 'half': return this.round(parent[this.wh(wh)] / 2);
             default: {
                 const num = Number(k);
                 if (!isNaN(num)) return num;
                 const p = this.parsePercentage(k);
                 return this.calcPercentage(p, wh, parent);
+            }
+        }
+    }
+    /**
+     * Parse a margin to number of characters
+     * @param k The keyword to parse
+     * @param tblr The keyword direction
+     * @param parent The reference Node
+     * @returns The number of characters
+     */
+    parseKeywordMargin(k: Keyword, tblr: Tblr, parent?: Node): number {
+        if (!parent) parent = this.parent || this.screen;
+        if (!parent) return 0;
+        if (!this.isTblr(tblr)) return 0;
+        switch (tblr) {
+            case 'left': {
+                switch (k) {
+                    case 'left': return 0;
+                    case 'right': return parent.width - this.width;
+                    case 'center': return this.round(parent.width / 2 - this.width / 2);
+                    case 'calc': return parent.width - (this.width + this.right);
+                    default: {
+                        const num = Number(k);
+                        if (!isNaN(num)) return num;
+                        const p = this.parsePercentage(k);
+                        return this.calcPercentage(p, tblr, parent);
+                    }
+                }
+            }
+            case 'right': {
+                switch (k) {
+                    case 'left': return parent.width + this.width;
+                    case 'right': return 0;
+                    case 'center': return this.round(parent.width / 2 + this.width / 2);
+                    case 'calc': return parent.width - (this.left + this.width);
+                    default: {
+                        const num = Number(k);
+                        if (!isNaN(num)) return num;
+                        const p = this.parsePercentage(k);
+                        return this.calcPercentage(p, tblr, parent);
+                    }
+                }
+            }
+            case 'top': {
+                switch (k) {
+                    case 'top': return 0;
+                    case 'bottom': return parent.height - this.height;
+                    case 'center': return this.round(parent.height / 2 - this.height / 2);
+                    case 'calc': return parent.height - (this.bottom + this.height);
+                    default: {
+                        const num = Number(k);
+                        if (!isNaN(num)) return num;
+                        const p = this.parsePercentage(k);
+                        return this.calcPercentage(p, tblr, parent);
+                    }
+                }
+            }
+            case 'bottom': {
+                switch (k) {
+                    case 'top': return parent.height - this.height;
+                    case 'bottom': return 0;
+                    case 'center': return this.round(parent.height / 2 + this.height / 2);
+                    case 'calc': return parent.height - (this.top + this.height);
+                    default: {
+                        const num = Number(k);
+                        if (!isNaN(num)) return num;
+                        const p = this.parsePercentage(k);
+                        return this.calcPercentage(p, tblr, parent);
+                    }
+                }
             }
         }
     }
