@@ -347,6 +347,7 @@ export default class Element extends Node {
     style: StyleReq;
     index: number;
     contentMat: Mat;
+    renderMat?: Mat;
     readonly nPer: Percentage;
     constructor(opts: ElementOptions) {
         super();

@@ -1,12 +1,19 @@
 import Mat from './Mat.js';
 import Node from './Node.js';
 import Element from './Element.js';
-import Color from './color/Color.js';
-import ansi from 'ansi-escapes';
+import Color from './Color.js';
+import { Ansi } from './Constants.js';
+import Keys from './Keys.js';
 import tc from 'tinycolor2';
-import process from 'node:process';
+import { minimatch } from 'minimatch';
 import isIntr from 'is-interactive';
+import assert from 'node:assert';
 
+import { type Key } from './Keys.js';
+
+/**
+ * Options for the Screen constructor
+ */
 export interface ScreenOptions {
     /**
      * Time (in milliseconds) to wait before updating screen contents after resize
@@ -39,6 +46,10 @@ export interface ScreenOptions {
      */
     stdout: typeof process.stdout;
     /**
+     * Manually set stdin
+     */
+    stdin: typeof process.stdin;
+    /**
      * Whether or not to enter the alternative screen
      * @default true
      */
@@ -68,6 +79,9 @@ export interface ScreenOptions {
     ignoreDockContrast: boolean;
 }
 
+/**
+ * Dimensions interface
+ */
 export interface Dims {
     /**
      * Terminal width
@@ -89,6 +103,43 @@ export interface Dims {
      * Terminal width (same as cols and width)
      */
     columns: number;
+}
+
+/**
+ * A key match
+ * @internal
+ */
+export interface KeyMatch {
+    val: Array<{
+        mod: {
+            ctrl: boolean;
+            shift: boolean;
+            meta: boolean;
+        }
+        ch: string | RegExp;
+        glob: boolean;
+    }>;
+    cb: (ch: string, key: Key | undefined) => void;
+}
+/**
+ * Options for Key
+ */
+export interface KeyOptions {
+    /**
+     * Use glob matching
+     * @see {@link https://github.com/isaacs/minimatch#minimatch}
+     */
+    glob?: boolean;
+    /**
+     * Use shorthand
+     */
+    shorthand?: boolean;
+}
+export interface Shorthand {
+    ctrl: boolean;
+    meta: boolean;
+    shift: boolean;
+    ch: string;
 }
 
 export default class Screen extends Node {
@@ -117,12 +168,15 @@ export default class Screen extends Node {
     #resizeTimer?: ReturnType<typeof setTimeout>;
     #clearCoords: Array<Array<number>>;
     #fillCoords: Array<Array<number | tc.ColorInput | string>>;
+    keyReady: boolean;
     color: Color;
+    keys: Array<KeyMatch>;
     constructor(opts: Partial<ScreenOptions> = {}) {
         super();
 
         this.type = 'screen';
         this.#clearCoords = this.#fillCoords = [];
+        this.keyReady = false;
 
         this.opts = {
             resizeTimeout: opts.resizeTimeout || 300,
@@ -131,6 +185,7 @@ export default class Screen extends Node {
             bitDepth: opts.bitDepth || opts.disableChecks ? 16 : process.stdout.getColorDepth(),
             hideCursor: opts.hideCursor || false, //change when done
             stdout: opts.stdout || process.stdout,
+            stdin: opts.stdin || process.stdin,
             fullScreen: opts.fullScreen || false, // this too
             dockBorders: opts.dockBorders || true,
             ignoreDockContrast: opts.ignoreDockContrast || false
@@ -138,8 +193,8 @@ export default class Screen extends Node {
 
         // option checks
         if (!this.opts.interactive) throw new Error('Terminal is not interactive');
-        this.opts.hideCursor && this.write(ansi.cursorHide);
-        this.opts.fullScreen && this.write(ansi.enterAlternativeScreen);
+        this.opts.hideCursor && this.write(Ansi.cur.hide);
+        this.opts.fullScreen && this.write(Ansi.scrn.alt.enter);
         process.on('exit', this.exit.bind(this));
 
         // stdout stuff
@@ -161,7 +216,37 @@ export default class Screen extends Node {
             n.setScreen(this, true);
         });
         this.color = new Color(this.opts.bitDepth);
+        this.keys = [];
+        this.opts.stdin.on('keypress', (ch: string, key: Key | undefined) => {
+            // if ch is undef, use name, if neither then return :(
+            const c = key?.name || ch;
+            if (!c) return;
+            for (const _m of this.keys) {
+                k: for (const m of _m.val) {
+                    // cant check mods if key is undefined
+                    if ((m.mod.ctrl || m.mod.meta || m.mod.shift) && !key) continue k;
+                    // required mods are on else continue
+                    if ((m.mod.ctrl && !key!.ctrl) || (!m.mod.ctrl && key?.ctrl)) continue k;
+                    if ((m.mod.meta && !key!.meta) || (!m.mod.meta && key?.meta)) continue k;
+                    if ((m.mod.shift && !key!.shift) || (!m.mod.shift && key?.shift)) continue k;
+                    let mtch = false;
+                    if (m.glob && typeof m.ch === 'string') mtch = minimatch(c, m.ch);
+                    else if (this.isRegex(m.ch)) mtch = m.ch.test(c);
+                    else if (typeof m.ch === 'string') mtch = m.ch === c;
+                    if (mtch) {
+                        _m.cb(ch, key);
+                        break k;
+                    }
+                }
+            }
+        });
     }
+    /**
+     * Construct a Dims object with aliases from rows and cols
+     * @param rows Rows
+     * @param cols Columns
+     * @returns The generated Dims object
+     */
     constructDims(rows: number, cols: number) {
         const d: Dims = <Dims>{};
         d.width = d.cols = d.columns = cols;
@@ -169,18 +254,75 @@ export default class Screen extends Node {
         return d;
     }
     /**
+     * Test if a value is a RegExp
+     * @param r The value to test
+     */
+    isRegex(r: any): r is RegExp {
+        return Object.prototype.toString.call(r) === '[object RegExp]';
+    }
+    /**
      * Exit the screen
      * @param proc Whether or not to call process.exit. Default false
      */
     exit(proc = false): void {
-        this.opts.hideCursor && this.write(ansi.cursorShow);
-        this.opts.fullScreen && this.write(ansi.exitAlternativeScreen);
+        this.opts.hideCursor && this.write(Ansi.cur.show);
+        this.opts.fullScreen && this.write(Ansi.scrn.alt.exit);
+        this.keyReady && this.opts.stdin.pause();
         proc && process.exit(0);
+    }
+
+    // key stuff
+    enableInput() {
+        if (this.keyReady) return;
+        Keys.emitKeypressEvents(this.opts.stdin);
+        this.opts.stdin.setRawMode(true);
+        this.opts.stdin.resume();
+        this.keyReady = true;
+    }
+    parseShorthand(k: string): Shorthand {
+        const p = k.split('-').filter(i => i.length > 0);
+        let ch = '';
+        let ctrl = false;
+        let meta = false;
+        let shift = false;
+        if (p.length < 1) return { ctrl, meta, shift, ch };
+        for (let i = 0; i < p.length - 1; i++) {
+            if (/^ctrl$|^control$|^c$/i.test(p[i] ?? '')) ctrl = true;
+            if (/^meta$|^windows$|^win$|^m$/i.test(p[i] ?? '')) meta = true;
+            if (/^shift$|^s$/i.test(p[i] ?? '')) shift = true;
+        }
+        ch = p[p.length - 1] ?? '';
+        return { ctrl, meta, shift, ch };
+    }
+    key(keys: Array<string | RegExp> | string | RegExp, cb: (ch: string, key: Key | undefined) => void, opts?: KeyOptions): void {
+        if (!this.keyReady) this.enableInput();
+        const _k = Array.isArray(keys) ? keys : [keys];
+        this.keys.push({
+            val: _k.map(k => {
+                let ch = k;
+                let ctrl = false;
+                let meta = false;
+                let shift = false;
+                if ((opts?.shorthand ?? true) && typeof k === 'string') {
+                    ({ ctrl, meta, shift, ch } = this.parseShorthand(k)); // parens for deconstruct
+                }
+                return {
+                    mod: {
+                        ctrl,
+                        meta,
+                        shift
+                    },
+                    ch,
+                    glob: opts?.glob ?? true
+                }
+            }),
+            cb
+        });
     }
 
     // rendering
     pruneNodes(arr: Array<Node> = this.children): Array<Element> {
-        const a = arr as Array<Element>;
+        const a = <Array<Element>>arr;
         return a.filter(ch => ch instanceof Element);
     }
     sortDuplicates() {
@@ -214,6 +356,7 @@ export default class Screen extends Node {
         }
     }
     render() {
+        this.emitDescendants('prerender');
         const m = new Mat(this.width, this.height);
         const chs = this.pruneNodes().sort((a, b) => {
             if (a.index === b.index) throw new Error('Indexes must not be equal');
@@ -227,8 +370,9 @@ export default class Screen extends Node {
             const bg = this.color.parse(ch.style.bg, true);
             if (width + ch.aleft > this.width) width = this.width - ch.aleft;
             if (height + ch.atop > this.height) height = this.height - ch.atop;
-            m.blk(ch.aleft, ch.atop, width, height, `${fg}${bg}${ch.opts.ch}\x1b[0m`);
-            m.overlay(ch.aleft, ch.atop, ch.contentMat.preProcess(m => {
+            const cm = new Mat(width, height);
+            cm.blk(0, 0, width, height, `${fg}${bg}${ch.opts.ch}\x1b[0m`);
+            cm.overlay(0, 0, ch.contentMat.preProcess(m => {
                 for (let y = 0; y < m.y; y++) {
                     for (let x = 0; x < m.x; x++) {
                         if (m.m[y][x] !== m.blnk) m.xy(x, y, `${fg + bg + m.m[y][x]}\x1b[0m`)
@@ -236,17 +380,21 @@ export default class Screen extends Node {
                 }
                 return m;
             }));
-            for (const c of this.#clearCoords) {
-                if (c.length !== 2) continue;
-                m.xy(c[0], c[1]);
-            }
-            for (const c of this.#fillCoords) {
-                if (c.length !== 4) continue;
-                if (typeof c[0] && typeof c[1] === 'number') break;
+            m.overlay(ch.aleft, ch.atop, cm);
+        }
+        for (const c of this.#clearCoords) {
+            if (c.length !== 2) continue;
+            m.xy(c[0], c[1]);
+        }
+        for (const c of this.#fillCoords) {
+            if (c.length !== 4) continue;
+            if (typeof c[0] === 'number' && typeof c[1] === 'number' && (typeof c[2] === 'string' || c[2] instanceof tc) && typeof c[3] === 'string') {
+                m.xy(c[0], c[1], `${this.color.parse(c[2])}${c[3]}\x1b[0m`)
             }
         }
         const rend = m.render();
         this.write(rend);
+        this.emitDescendants('render');
     }
     write(data: string | Uint8Array): void {
         this.opts.stdout.write(data);

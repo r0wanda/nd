@@ -31,6 +31,7 @@
     "@types/tinycolor2": "^1.4.5",
     "ansi-escapes": "^6.2.0",
     "is-interactive": "^2.0.0",
+    "minimatch": "^9.0.3",
     "string-length": "^6.0.0",
     "tinycolor2": "^1.6.0"
   },
