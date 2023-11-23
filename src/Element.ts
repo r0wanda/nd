@@ -135,7 +135,7 @@ export interface ElementOptions {
     /**
      * Children of element
      */
-    children?: Array<Node>;
+    children?: Array<Element>;
     /**
      * Element foreground color. Try to put this under "style", for sake of organization
      */
@@ -318,29 +318,90 @@ export interface Percentage {
     offset: number;
 }
 
+const _Node: new () => Omit<Node, 'parent' | 'children'> = Node;
+
 /**
  * The base Element class, which all other rendered objects descend from.
  * @abstract
  */
-export default class Element extends Node {
-    left: number;
-    right: number;
-    top: number;
-    bottom: number;
+export default class Element extends _Node {
+    /**
+     * Absolute left. READ ONLY! It WILL mess up rendering if modified.
+     * @readonly
+     */
     aleft: number;
+    /**
+     * Absolute right. READ ONLY! It WILL mess up rendering if modified.
+     * @readonly
+     */
     aright: number;
+    /**
+     * Absolute top. READ ONLY! It WILL mess up rendering if modified.
+     * @readonly
+     */
     atop: number;
+    /**
+     * Absolute bottom. READ ONLY! It WILL mess up rendering if modified.
+     * @readonly
+     */
     abottom: number;
+    // element parents/children can only be elements. node is only there for child support (support for append, prepend, insert children etc)
+    // the only class that is a node and not an element is screen, bc width/height &stuff work differently
+    parent?: Element;
+    children: Array<Element>;
+    // yippee a bunch of (nearly, excluding content) identical getters/setters
     get content(): string {
-        return this.#content;
+        return this._content;
     }
     set content(val: string) {
-        this.#content = val;
+        this._content = val;
         this.contentLen = length(val);
         this.contentHeight = (val.match(/\n/g) || []).length + 1;
         this.genContent();
     }
-    #content: string;
+    get left(): number {
+        return this._left;
+    }
+    set left(left: Keyword) {
+        this.calcPos({ left });
+    }
+    get right(): number {
+        return this._right;
+    }
+    set right(right: Keyword) {
+        this.calcPos({ right });
+    }
+    get top(): number {
+        return this._top;
+    }
+    set top(top: Keyword) {
+        this.calcPos({ top });
+    }
+    get bottom(): number {
+        return this._bottom;
+    }
+    set bottom(bottom: Keyword) {
+        this.calcPos({ bottom });
+    }
+    get width(): number {
+        return this._width;
+    }
+    set width(width: Keyword) {
+        this.calcPos({ width });
+    }
+    get height(): number {
+        return this._height;
+    }
+    set height(height: Keyword) {
+        this.calcPos({ height });
+    }
+    _left: number;
+    _right: number;
+    _top: number;
+    _bottom: number;
+    _width: number;
+    _height: number;
+    _content: string;
     contentLen: number;
     contentHeight: number;
     opts: Required<OptionsNoStyle>;
@@ -352,7 +413,7 @@ export default class Element extends Node {
     constructor(opts: ElementOptions) {
         super();
         this.type = 'element';
-        this.parent = opts.parent instanceof Node ? opts.parent : undefined;
+        this.parent = opts.parent instanceof Element ? opts.parent : undefined;
         this.on('resize', () => {
             this.calcPos();
         });
@@ -398,15 +459,15 @@ export default class Element extends Node {
             hover: opts.style?.hover
         }
         // defaults to make typescript happy
-        this.width = this.height =
-        this.left = this.right = this.top = this.bottom =
+        this._width = this._height =
+        this._left = this._right = this._top = this._bottom =
         this.aleft = this.aright = this.atop = this.abottom = 0;
         // actually set position
-        if ((this.opts.left === 'calc' && this.opts.right === 'calc') || (this.opts.top === 'calc' && this.opts.bottom === 'calc'))
-            throw new Error('No 2 opposite position arguments (left/right, top/bottom) can both be calculated.');
-        this.calcPos();
+        this.calcPos({
+            regenContent: false
+        });
         // content (and ts defaults)
-        this.#content = '';
+        this._content = '';
         this.contentLen = this.contentHeight = 0;
         this.contentMat = new Mat(0, 0);
         this.content = this.opts.content;
@@ -418,32 +479,55 @@ export default class Element extends Node {
     setContent(val: string) {
         this.content = val;
     }
-    calcPos(): void {
+    /**
+     * Calculate position
+     * @internal
+     */
+    calcPos(opts?: {
+        width?: Keyword;
+        height?: Keyword;
+        left?: Keyword;
+        right?: Keyword;
+        top?: Keyword;
+        bottom?: Keyword;
+        regenContent?: boolean;
+    }): void {
+        if (opts?.width) this.opts.width = opts.width;
+        if (opts?.height) this.opts.height = opts.height;
+        if (opts?.left) this.opts.left = opts.left;
+        if (opts?.right) this.opts.right = opts.right;
+        if (opts?.top) this.opts.top = opts.top;
+        if (opts?.bottom) this.opts.bottom = opts.bottom;
+        // ensure that args are correct
+        if ((this.opts.left === 'calc' && this.opts.right === 'calc') || (this.opts.top === 'calc' && this.opts.bottom === 'calc'))
+            throw new Error('No 2 opposite position arguments (left/right, top/bottom) can both be calculated.');
         // width/height must be defined first
-        this.width = this.parseKeywordWH(this.opts.width, 'w');
-        this.height = this.parseKeywordWH(this.opts.height, 'h');
-        console.error(this.width, this.height);
+        this._width = this.parseKeywordWH(this.opts.width, 'w');
+        this._height = this.parseKeywordWH(this.opts.height, 'h');
         if (this.screen && this.opts.resize && this.width + this.aleft > this.screen.width) this.width = this.screen.width - this.aleft;
         if (this.screen && this.opts.resize && this.height + this.atop > this.screen.height) this.height = this.screen.height - this.atop;
-        console.error(this.width, this.height);
         // then margins
-        this.left = this.parseKeywordMargin(this.opts.left, 'left');
-        this.right = this.parseKeywordMargin(this.opts.right, 'right');
-        this.top = this.parseKeywordMargin(this.opts.top, 'top');
-        this.bottom = this.parseKeywordMargin(this.opts.bottom, 'bottom');
+        this._left = this.parseKeywordMargin(this.opts.left, 'left');
+        this._right = this.parseKeywordMargin(this.opts.right, 'right');
+        this._top = this.parseKeywordMargin(this.opts.top, 'top');
+        this._bottom = this.parseKeywordMargin(this.opts.bottom, 'bottom');
         this.aleft = this.parseKeywordMargin(this.opts.left, 'left', this.screen);
         this.aright = this.parseKeywordMargin(this.opts.right, 'right', this.screen);
         this.atop = this.parseKeywordMargin(this.opts.top, 'top', this.screen);
         this.abottom = this.parseKeywordMargin(this.opts.bottom, 'bottom', this.screen);
+        // regen contentmat by calling setter
+        if (opts?.regenContent ?? true) this.content = this.content;
     }
     /**
      * Is keyword a percentage (50%, 25%+1, 70%-1, etc...)
+     * @internal
      */
     isPercentage(k: Keyword): k is string { //
         return k ? typeof k === 'number' ? false : !isNaN(Number(k.replace('%', '').replace(/[+-]/, ''))) : false;
     }
     /**
      * Is percentage nPer (iNvalid Percentage)
+     * @internal
      * @param p The percentage to check
      */
     isNPer(p: Percentage): boolean {
@@ -451,6 +535,7 @@ export default class Element extends Node {
     }
     /**
      * Check if string is 'w' or 'h'
+     * @internal
      * @param wh The string to check
      */
     isWh(wh: string): wh is 'w' | 'h' {
@@ -458,6 +543,7 @@ export default class Element extends Node {
     }
     /**
      * Check if string is 'top', 'bottom', 'left, or 'right'
+     * @internal
      * @param tblr The string to check
      */
     isTblr(tblr: string): tblr is Tblr {
@@ -465,6 +551,7 @@ export default class Element extends Node {
     }
     /**
      * Convert a string from w or h to width or height
+     * @internal
      * @param wh The string to convert
      * @returns 
      */
@@ -473,12 +560,15 @@ export default class Element extends Node {
     }
     /**
      * Round a number according to options. Will consistently either round up or down.
+     * @internal
      */
     round(n: number): number {
         return Math[this.opts.floor ? 'floor' : 'ceil'](n);
     }
+
     /**
      * Generate a Mat from the content
+     * @internal
      */
     genContent() {
         const mat =  new Mat(this.width, this.height, '');
@@ -545,7 +635,7 @@ export default class Element extends Node {
      * @param parent The reference Node
      * @returns The number of characters
      */
-    calcPercentage(p: Percentage, type: 'w' | 'h' | Tblr, parent?: Node): number {
+    calcPercentage(p: Percentage, type: 'w' | 'h' | Tblr, parent?: Element | Screen): number {
         if (!parent) parent = this.parent || this.screen;
         if (!parent) return 0;
         if (this.isNPer(p)) return 0;
@@ -567,7 +657,7 @@ export default class Element extends Node {
      * @param parent The reference Node
      * @returns The number of characters
      */
-    parseKeywordWH(k: Keyword, wh: 'w' | 'h' = 'w', parent?: Node): number {
+    parseKeywordWH(k: Keyword, wh: 'w' | 'h' = 'w', parent?: Element | Screen): number {
         if (!parent) parent = this.parent || this.screen;
         if (!parent) return 0;
         if (wh !== 'w' && wh !== 'h') return 0;
@@ -589,7 +679,7 @@ export default class Element extends Node {
      * @param parent The reference Node
      * @returns The number of characters
      */
-    parseKeywordMargin(k: Keyword, tblr: Tblr, parent?: Node): number {
+    parseKeywordMargin(k: Keyword, tblr: Tblr, parent?: Element | Screen): number {
         if (!parent) parent = this.parent || this.screen;
         if (!parent) return 0;
         if (!this.isTblr(tblr)) return 0;

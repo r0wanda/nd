@@ -165,6 +165,13 @@ export default class Screen extends Node {
     set rows(v: number) {
         this.height = v;
     }
+    get title() {
+        return this.#title;
+    }
+    set title(t: string) {
+        this.write(`\x1b]0;${t}\x07`);
+    }
+    #title: string;
     #resizeTimer?: ReturnType<typeof setTimeout>;
     #clearCoords: Array<Array<number>>;
     #fillCoords: Array<Array<number | tc.ColorInput | string>>;
@@ -175,6 +182,7 @@ export default class Screen extends Node {
         super();
 
         this.type = 'screen';
+        this.#title = '';
         this.#clearCoords = this.#fillCoords = [];
         this.keyReady = false;
 
@@ -264,11 +272,10 @@ export default class Screen extends Node {
      * Exit the screen
      * @param proc Whether or not to call process.exit. Default false
      */
-    exit(proc = false): void {
+    exit(): void {
         this.opts.hideCursor && this.write(Ansi.cur.show);
         this.opts.fullScreen && this.write(Ansi.scrn.alt.exit);
         this.keyReady && this.opts.stdin.pause();
-        proc && process.exit(0);
     }
 
     // key stuff
@@ -321,10 +328,6 @@ export default class Screen extends Node {
     }
 
     // rendering
-    pruneNodes(arr: Array<Node> = this.children): Array<Element> {
-        const a = <Array<Element>>arr;
-        return a.filter(ch => ch instanceof Element);
-    }
     sortDuplicates() {
         const i: Array<number> = [];
         for (const ch of this.pruneNodes()) {

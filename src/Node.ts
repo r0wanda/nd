@@ -1,4 +1,5 @@
 import type Screen from './Screen.js';
+import Element from './Element.js';
 import { EventEmitter } from 'node:events';
 
 /**
@@ -20,13 +21,14 @@ export default class Node extends EventEmitter {
     _data?: NodeData;
     $?: NodeData;
     type: string;
-    width: number;
-    height: number;
     constructor() {
         super();
         this.type = 'node';
         this.children = [];
-        this.width = this.height = 0;
+    }
+    pruneNodes(arr: Array<Node> = this.children): Array<Element> {
+        const a = <Array<Element>>arr;
+        return a.filter(ch => ch instanceof Element);
     }
     /**
      * Add node to screen
