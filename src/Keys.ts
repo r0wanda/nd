@@ -104,11 +104,11 @@ export default new class Keys {
         if (this.isKeyStream(_stream)) return;
         const stream = <KeyStream>_stream;
         stream._keypressDecoder = new StringDecoder('utf8');
-        const self = this;
+        const emitKeys = this.emitKeys.bind(this);
         function onData(b: Buffer) {
-            if (self.listenerCount(stream, 'keypress') > 0) {
-                let r = stream._keypressDecoder.write(b);
-                if (r) self.emitKeys(stream, r);
+            if (stream.listeners('keypress').length > 0) {
+                const r = stream._keypressDecoder.write(b);
+                if (r) emitKeys(stream, r);
             } else {
                 stream.removeListener('data', onData);
                 stream.on('newListener', onNewListener);
@@ -120,7 +120,7 @@ export default new class Keys {
                 stream.removeListener('newListener', onNewListener);
             }
         }
-        if (this.listenerCount(stream, 'keypress') > 0) {
+        if (stream.listeners('keypress').length > 0) {
             stream.on('data', onData);
         } else {
             stream.on('newListener', onNewListener);
@@ -178,7 +178,7 @@ export default new class Keys {
 
         let buffer: Array<string> = [];
         let match: RegExpExecArray | null;
-        while (match = this.escapeCodeReAnywhere.exec(s)) {
+        while ((match = this.escapeCodeReAnywhere.exec(s))) {
             buffer = buffer.concat(s.slice(0, match.index).split(''));
             buffer.push(match[0]);
             s = s.slice(match.index + match[0].length);
@@ -187,7 +187,7 @@ export default new class Keys {
 
         buffer.forEach(s => {
             let ch;
-            let key: Key = {
+            const key: Key = {
                 sequence: s,
                 name: undefined,
                 ctrl: false,
@@ -230,21 +230,21 @@ export default new class Keys {
                 // shift+letter
                 key.name = s.toLowerCase();
                 key.shift = true;
-            } else if (parts = this.metaKeyCodeRe.exec(s)) {
+            } else if ((parts = this.metaKeyCodeRe.exec(s))) {
                 // meta+character key
                 key.name = parts[1].toLowerCase();
                 key.meta = true;
                 key.shift = /^[A-Z]$/.test(parts[1]);
 
-            } else if (parts = this.functionKeyCodeRe.exec(s)) {
+            } else if ((parts = this.functionKeyCodeRe.exec(s))) {
                 // ansi escape sequence
 
                 // reassemble the key code leaving out leading \x1b's,
                 // the modifier key bitflag and any meaningless "1;" sequence
                 const p3 = Number(parts[3]);
                 const p8 = Number(parts[8]);
-                let code = (parts[1] || '') + (parts[2] || '') + (parts[4] || '') + (parts[9] || '');
-                let modifier = (isNaN(p3) ? (isNaN(p8) ? 1 : p8) : p3) - 1;
+                const code = (parts[1] || '') + (parts[2] || '') + (parts[4] || '') + (parts[9] || '');
+                const modifier = (isNaN(p3) ? (isNaN(p8) ? 1 : p8) : p3) - 1;
 
                 // Parse the key modifier
                 key.ctrl = !!(modifier & 4);

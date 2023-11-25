@@ -5,7 +5,7 @@ const scr = new Screen();
 const el = new Element({
     fg: 'red',
     bg: 'green',
-    content: 'hello world',
+    content: '{center}hello world{/center}\n{left}left{/left}\n{right}right{/right}',
     screen: scr,
     width: '50%',
     height: '50%',
@@ -13,7 +13,7 @@ const el = new Element({
     top: '10%',
 });
 scr.render();
-scr.key(['esc*', 'q', 'C-c'], (ch, key) => {
+scr.key(['esc*', 'q', 'C-c'], () => {
     process.exit();
 });
 scr.key('h', () => {

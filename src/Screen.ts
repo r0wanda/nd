@@ -7,7 +7,7 @@ import Keys from './Keys.js';
 import tc from 'tinycolor2';
 import { minimatch } from 'minimatch';
 import isIntr from 'is-interactive';
-import assert from 'node:assert';
+//import assert from 'node:assert';
 
 import { type Key } from './Keys.js';
 
@@ -107,10 +107,11 @@ export interface Dims {
 
 /**
  * A key match
+ * @remarks This system along with others in this program work on the idea of turning user input into a list of objects of parsed data
  * @internal
  */
 export interface KeyMatch {
-    val: Array<{
+    val: {
         mod: {
             ctrl: boolean;
             shift: boolean;
@@ -118,7 +119,7 @@ export interface KeyMatch {
         }
         ch: string | RegExp;
         glob: boolean;
-    }>;
+    }[];
     cb: (ch: string, key: Key | undefined) => void;
 }
 /**
@@ -173,11 +174,11 @@ export default class Screen extends Node {
     }
     #title: string;
     #resizeTimer?: ReturnType<typeof setTimeout>;
-    #clearCoords: Array<Array<number>>;
-    #fillCoords: Array<Array<number | tc.ColorInput | string>>;
+    #clearCoords: number[][];
+    #fillCoords: (number | tc.ColorInput | string)[][];
     keyReady: boolean;
     color: Color;
-    keys: Array<KeyMatch>;
+    keys: KeyMatch[];
     constructor(opts: Partial<ScreenOptions> = {}) {
         super();
 
@@ -301,7 +302,7 @@ export default class Screen extends Node {
         ch = p[p.length - 1] ?? '';
         return { ctrl, meta, shift, ch };
     }
-    key(keys: Array<string | RegExp> | string | RegExp, cb: (ch: string, key: Key | undefined) => void, opts?: KeyOptions): void {
+    key(keys: string[] | RegExp[] | string | RegExp, cb: (ch: string, key: Key | undefined) => void, opts?: KeyOptions): void {
         if (!this.keyReady) this.enableInput();
         const _k = Array.isArray(keys) ? keys : [keys];
         this.keys.push({
@@ -329,7 +330,7 @@ export default class Screen extends Node {
 
     // rendering
     sortDuplicates() {
-        const i: Array<number> = [];
+        const i: number[] = [];
         for (const ch of this.pruneNodes()) {
             if (i.includes(ch.index)) {
                 let nI = 0;

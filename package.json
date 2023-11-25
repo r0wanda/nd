@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "type": "module",
   "scripts": {
-    "pretest": "tsc",
+    "pretest": "tsc && eslint .",
     "test": "node dist/index.js 2> errfile",
     "lint": "eslint .",
     "docs": "typedoc --out docs src/*.ts"

@@ -17,7 +17,7 @@ export interface NodeData {
 export default class Node extends EventEmitter {
     screen?: Screen;
     parent?: Node;
-    children: Array<Node>;
+    children: Node[];
     _data?: NodeData;
     $?: NodeData;
     type: string;
@@ -26,8 +26,8 @@ export default class Node extends EventEmitter {
         this.type = 'node';
         this.children = [];
     }
-    pruneNodes(arr: Array<Node> = this.children): Array<Element> {
-        const a = <Array<Element>>arr;
+    pruneNodes(arr: Node[] = this.children): Element[] {
+        const a = <Element[]>arr;
         return a.filter(ch => ch instanceof Element);
     }
     /**
@@ -163,8 +163,7 @@ export default class Node extends EventEmitter {
      * @param ev The event to emit
      * @param args The args to pass to the event
      */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    emitDescendants(ev: string, ...args: Array<any>) {
+    emitDescendants(ev: string, ...args: any[]) {
         this.emit(ev, ...args);
         for (const c of this.children) c.emitDescendants(ev, ...args);
     }
@@ -173,8 +172,7 @@ export default class Node extends EventEmitter {
      * @param ev The event to emit
      * @param args The args to pass to the event
      */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    emitDescendantsExSelf(ev: string, ...args: Array<any>) {
+    emitDescendantsExSelf(ev: string, ...args: any[]) {
         for (const c of this.children) c.emitDescendants(ev, ...args);
     }
 }

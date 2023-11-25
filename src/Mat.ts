@@ -6,7 +6,6 @@ export type Mat_t = Array<Row_t>;
 /**
  * A 2-dimensional character matrix (used to additively render elements to screen)
  * @remarks The origin is the top/left corner, not the center.
- * @abstract
  */
 export default class Mat {
     m: Mat_t;
@@ -88,5 +87,65 @@ export default class Mat {
                 if (m.m[y][x] !== blnk) this.xy(x + _x, y + _y, m.m[y][x]);
             }
         }
+    }
+    column(x: number) {
+        if (x >= this.x) throw new RangeError('Generating Column: Requested column position is out of range');
+        const c: Row_t = [];
+        for (let y = 0; y < this.y; y++) {
+            c.push(this.m[y][x]);
+        }
+        return c;
+    }
+    removeColumn(x: number) {
+        if (x >= this.x) throw new RangeError('Removing Column: Requested column position is out of range');
+        for (let y = 0; y < this.y; y++) {
+            this.m[y].splice(x, 1);
+        }
+        this.x--;
+    }
+    shiftColumn() {
+        const c = this.column(0);
+        this.removeColumn(0);
+        return c;
+    }
+    popColumn() {
+        const c = this.column(this.x - 1);
+        this.removeColumn(this.x - 1)
+        return c;
+    }
+    createShrinkable(blnk = this.blnk) {
+        return (r: Row_t) => r.reduce((p, c) => p ? c === blnk : p, true);
+    }
+    xShrink(blnk = this.blnk) {
+        const isShrinkable = this.createShrinkable(blnk);
+        for (let x = 0; x < this.x; x++) {
+            if (isShrinkable(this.column(x))) {
+                this.shiftColumn();
+            } else break;
+        }
+        for (let x = this.x - 1; x > 0; x--) {
+            if (isShrinkable(this.column(x))) {
+                this.popColumn();
+            } else break;
+        }
+    }
+    yShrink(blnk = this.blnk) {
+        const isShrinkable = this.createShrinkable(blnk);
+        for (let y = 0; y < this.y; y++) {
+            if (isShrinkable(this.m[y])) {
+                this.m.shift();
+                this.y--;
+            } else break;
+        }
+        for (let y = this.y - 1; y > 0; y--) {
+            if (isShrinkable(this.m[y])) {
+                this.m.pop();
+                this.y--;
+            } else break;
+        }
+    }
+    shrink(blnk = this.blnk) {
+        this.xShrink(blnk);
+        this.yShrink(blnk);
     }
 }
