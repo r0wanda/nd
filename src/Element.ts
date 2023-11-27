@@ -458,9 +458,11 @@ export default class Element extends _Node {
             floor: opts.floor || true,
             resize: opts.resize || true
         }
+        const fg = tc(opts.style?.fg || opts.fg);
+        const bg = tc(opts.style?.bg || opts.bg);
         this.style = {
-            fg: opts.style?.fg || opts.fg || 'default',
-            bg: opts.style?.bg || opts.bg || 'default',
+            fg: (fg.isValid() ? fg : false) || 'default',
+            bg: (bg.isValid() ? bg : false) || 'default',
             border: opts.style?.border || opts.border,
             scrollbar: opts.style?.scrollbar,
             focus: opts.style?.focus,
@@ -635,7 +637,7 @@ export default class Element extends _Node {
      */
     genContent(color = this.screen?.color) {
         const mat = new Mat(this.width, this.height, '');
-        console.error(color);
+        if (!color) return;
         // calculate the valign
         let t = 0;
         switch (this.opts.valign) {
@@ -669,13 +671,14 @@ export default class Element extends _Node {
         }
 
         const alignRe = /left|right|center|\|/i;
+        const colorRe = /-fg$|-bg$/i;
 
         let x = 0;
         let y = 0;
-        //let fg: tc.Instance;
-        //let bg: tc.Instance;
+        let fg = this.style.fg;
+        let bg = this.style.bg;
         let al = this.opts.align;
-        let finalized = false;
+        //let finalized = false;
 
         /*function close(type: string) {
             switch (type) {
@@ -719,30 +722,61 @@ export default class Element extends _Node {
         }
         function finalizeAlign(idx: number) {
             x = align(contentUntil(idx), upcomingSep(idx) ? 'left' : al);
-            finalized = true;
+            //finalized = true;
         }
-
+        firstContentOrAlign(0);
         for (let i = 0; i < tags.length; i++) {
             const t = tags[i];
-            if (alignRe.test(t.type) && firstContentOrAlign(i)) {
+            if (alignRe.test(t.type)) {
                 al = <typeof this.opts.align>t.type;
+                finalizeAlign(i);
             } else if (t.type === 'content') {
                 if (!t.val) continue;
-                if (!finalized) finalizeAlign(i);
+                const _fg = color.parse(fg);
+                const _bg = color.parse(bg, true);
+                //console.error({fg: tc(fg), bg, _fg, _bg})
                 for (const ch of t.val.split('')) {
-                    c.xy(x, y, ch);
+                    c.xy(x, y, `${_bg}${_fg}${ch}\x1b[0m`);
+                    console.error({c: `${_bg}${_fg}${ch}\x1b[0m`})
                     x++;
                 }
             } else if (t.type === 'newline') {
                 al = this.opts.align;
                 x = 0;
-                finalized = false;
                 y++;
+            } else if (t.type === 'closeAll') {
+                al = this.opts.align;
+                fg = this.style.fg;
+                bg = this.style.bg;
+            } else if (colorRe.test(t.type)) {
+                const col = t.type.replace(colorRe, '');
+                if (t.type.endsWith('-fg')) {
+                    fg = t.close ? this.style.fg : col;
+                } else if (t.type.endsWith('-bg')) {
+                    bg = t.close ? this.style.bg : col;
+                }
             }
         }
         c.yShrink();
         mat.overlay(0, t, c);
         this.contentMat = mat;
+    }
+    render() {
+        if (!this.screen?.color) throw new Error('Render cannot be run if no screen is available');
+        const color = this.screen.color;
+        let width = this.width;
+        let height = this.height;
+        console.error(width + this.aleft, height + this.atop);
+        const fg = color.parse(this.style.fg, false);
+        const bg = color.parse(this.style.bg, true);
+        if (width + this.aleft > this.screen.width) width = this.screen.width - this.aleft;
+        if (height + this.atop > this.screen.height) height = this.screen.height - this.atop;
+        const cm = new Mat(width, height);
+        console.error(width, height)
+        console.error(this.screen.width, this.screen.height);
+        cm.blk(0, 0, width, height, `${fg}${bg}${this.opts.ch}\x1b[0m`);
+        cm.overlay(0, 0, this.contentMat);
+        return cm;
     }
     /**
      * Parse a percentage string to the percent and offset

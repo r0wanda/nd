@@ -368,23 +368,7 @@ export default class Screen extends Node {
         });
         for (const ch of chs) {
             if (!(ch instanceof Element)) continue;
-            let width = ch.width;
-            let height = ch.height;
-            const fg = this.color.parse(ch.style.fg, false);
-            const bg = this.color.parse(ch.style.bg, true);
-            if (width + ch.aleft > this.width) width = this.width - ch.aleft;
-            if (height + ch.atop > this.height) height = this.height - ch.atop;
-            const cm = new Mat(width, height);
-            cm.blk(0, 0, width, height, `${fg}${bg}${ch.opts.ch}\x1b[0m`);
-            cm.overlay(0, 0, ch.contentMat.preProcess(m => {
-                for (let y = 0; y < m.y; y++) {
-                    for (let x = 0; x < m.x; x++) {
-                        if (m.m[y][x] !== m.blnk) m.xy(x, y, `${fg + bg + m.m[y][x]}\x1b[0m`)
-                    }
-                }
-                return m;
-            }));
-            m.overlay(ch.aleft, ch.atop, cm);
+            m.overlay(ch.aleft, ch.atop, ch.render());
         }
         for (const c of this.#clearCoords) {
             if (c.length !== 2) continue;

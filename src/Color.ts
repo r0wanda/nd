@@ -1,5 +1,6 @@
-import { Color4Bit, c } from "./Constants.js";
+import { Color4Bit } from "./Constants.js";
 import tc from 'tinycolor2';
+import { deepEqual as assert } from "node:assert";
 
 export default class Color {
     depth: number;
@@ -36,7 +37,14 @@ export default class Color {
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     getByValue(map: Map<any, any>, val: any) {
-        for (const [k, v] of map) if (v === val) return k;
+        l: for (const [k, v] of map) {
+            if (typeof v === 'object') {
+                try {
+                    assert(v, val);
+                } catch { continue l; }
+            } else if (v !== val) continue l;
+            return k;
+        }
     }
     /**
      * Get the closest color in a map of colors to the provided input color
@@ -45,18 +53,17 @@ export default class Color {
      * @param map The color map. Defaults to the one provided in the constructor
      * @returns The color code to be used in an ansi escape
      */
-    closest(col: tc.ColorInput, bg: boolean = false, map: Map<number, tc.ColorFormats.RGB> = this.colorMap) {
+    closest(col: tc.ColorInput, bg: boolean = false, map = this.colorMap) {
         const arr = [...map.values()];
         if (!(col instanceof tc)) col = tc(col);
         const rgb: tc.ColorFormats.RGB = col.toRgb();
-        let cls = 1000;
-        return this.getByValue(map, arr.reduce((prev, cur) => {
-            const dst = this.distance(rgb, cur);
-            if (dst < cls) {
-                cls = dst;
-                return cur;
-            } else return prev;
-        }, c(0, 0, 0))) + bg ? 10 : 0;
+        arr.sort((a, b) => {
+            const dA = this.distance(rgb, a);
+            const dB = this.distance(rgb, b);
+            return dA > dB ? 1 : (dA === dB ? 0 : -1);
+        });
+        console.error(bg, arr);
+        return this.getByValue(map, arr[0]) + (bg ? 10 : 0);
     }
     /**
      * Generate an ansi escape sequence from a RGB value
@@ -75,6 +82,7 @@ export default class Color {
      * @returns The escape code
      */
     parse(col: tc.ColorInput, bg: boolean = false) {
+        if (col === 'default') return '';
         if (!(col instanceof tc)) col = tc(col);
         return this.depth < 24 ? `\x1b[${this.closest(col, bg)}m` : this.rgb(col.toRgb(), bg);
     }
