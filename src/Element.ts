@@ -678,6 +678,7 @@ export default class Element extends _Node {
         let fg = this.style.fg;
         let bg = this.style.bg;
         let al = this.opts.align;
+        let regen = false;
         //let finalized = false;
 
         /*function close(type: string) {
@@ -695,12 +696,16 @@ export default class Element extends _Node {
         /*function contentInLine(idx: number) {
             return contentUntil(lastNewline(idx) + 1);
         }*/
-        function contentUntil(idx: number) {
+        function contentUntil(idx: number, a: typeof al, all = false) {
             let l = 0;
+            let nope = false;
             for (let i = idx; i < tags.length; i++) {
                 const t = tags[i];
                 if (t.type === 'newline') break;
-                else if (t.type === 'content') l += t.val?.length || 0;
+                else if (!all && alignRe.test(t.type) && t.type !== a) { // will not include anything not aligned the same way
+                    nope = !t.close; // if it is closing then set nope to true
+                }
+                else if (t.type === 'content' && !nope) l += t.val?.length || 0;
             }
             return l;
         }
@@ -712,26 +717,44 @@ export default class Element extends _Node {
             }
             return false;
         }
-        function firstContentOrAlign(idx: number) {
+        function prevSep(idx: number) {
+            if (idx < 1) return false;
+            for (let i = --idx; i > 0; i--) {
+                const t = tags[i];
+                if (t.type === 'newline') break;
+                else if (t.type === '|') return true;
+            }
+            return false;
+        }
+        /*function firstContentOrAlign(idx: number) {
             if (idx < 1) return true;
             for (let i = idx - 1; i > 0; i--) {
                 const t = tags[i];
                 if (t.type === 'content' || alignRe.test(t.type)) return true;
             }
             return false;
-        }
+        }*/
         function finalizeAlign(idx: number) {
-            x = align(contentUntil(idx), upcomingSep(idx) ? 'left' : al);
+            const a = upcomingSep(idx) ? 'left' : (prevSep(idx) ? 'right' : al);
+            console.error(upcomingSep(idx), prevSep(idx))
+            x = align(contentUntil(idx, a), a);
             //finalized = true;
         }
-        firstContentOrAlign(0);
         for (let i = 0; i < tags.length; i++) {
             const t = tags[i];
             if (alignRe.test(t.type)) {
-                al = <typeof this.opts.align>t.type;
-                finalizeAlign(i);
+                if (t.type === '|') {
+                    regen = true;
+                } else {
+                    al = <typeof this.opts.align>t.type;
+                    finalizeAlign(i);
+                }
             } else if (t.type === 'content') {
                 if (!t.val) continue;
+                if (regen) {
+                    finalizeAlign(i);
+                    regen = false;
+                }
                 const _fg = color.parse(fg);
                 const _bg = color.parse(bg, true);
                 //console.error({fg: tc(fg), bg, _fg, _bg})

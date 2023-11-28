@@ -5,7 +5,7 @@ const scr = new Screen();
 const el = new Element({
     fg: 'red',
     bg: 'green',
-    content: '{center}{magenta-fg}hello world{/magenta-fg}{/center}{left}{blue-bg}left{/blue-bg}{/left}\n{right}right{/right}',
+    content: '{center}{magenta-fg}hello world{/magenta-fg}{/center}{left}{blue-bg}left{/blue-bg}{/left}\n{right}right{/right}\n{red-bg}left seperator{|}right seperator{/red-bg}',
     screen: scr,
     width: '50%',
     height: '50%',

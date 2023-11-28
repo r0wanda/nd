@@ -4,7 +4,7 @@
 
 TODO: add gif
 
-***Where does the name come from?*** The name New Designs (shortened to ND) signifies a **new** design for blessed. The name also references NCurses (short for New Curses).
+***Where does the name come from?*** New Curses, but a new blessed design
 
 # Install
 Npm:
