@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "pretest": "tsc && eslint .",
-    "test": "node dist/index.js 2> errfile",
+    "test": "node dist/test.js 2> errfile",
     "lint": "eslint .",
     "docs": "typedoc --out docs src/*.ts"
   },
