@@ -6,6 +6,7 @@ module.exports = {
     rules: {
         '@typescript-eslint/ban-ts-comment': 'off',
         '@typescript-eslint/no-explicit-any': 'off',
+        '@typescript-eslint/no-unsafe-declaration-merging': 'off',
         'no-control-regex': 'off'
     },
     root: true,

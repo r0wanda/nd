@@ -4,53 +4,113 @@ import Screen from './Screen.js';
 import tc from 'tinycolor2';
 import length from 'string-length';
 
+import type Color_t from './Color.js';
+
 export type Keyword = number | string | 'center' | 'left' | 'right' | 'top' | 'bottom' | 'shrink' | 'calc';
 export type Color = tc.ColorInput | 'default';
 export type Tblr = 'top' | 'bottom' | 'left' | 'right';
+
+export interface Border_t {
+    row: string;
+    col: string;
+    tl: string;
+    tr: string;
+    bl: string;
+    br: string;
+}
+
+export const Border = {
+    row: '─',
+    col: '│',
+    tl: '┌', tr: '┐',
+    bl: '└', br: '┘'
+}
+export const BorderArc = {
+    row: '─',
+    col: '│',
+    tl: '╭', tr: '╮',
+    bl: '╰', br: '╯'
+}
+export const BorderDash = {
+    row: '┄',
+    col: '┆',
+    tl: '┌', tr: '┐',
+    bl: '└', br: '┘'
+}
+export const BorderHeavy = {
+    row: '━',
+    col: '┃',
+    tl: '┏', tr: '┓',
+    bl: '┗', br: '┛'
+}
+export const BorderHeavyDash = {
+    row: '┅',
+    col: '┇',
+    tl: '┏', tr: '┓',
+    bl: '┗', br: '┛'
+}
+export const BorderDouble = {
+    row: '═',
+    col: '║',
+    tl: '╔', tr: '╗',
+    bl: '╚', br: '╝'
+}
+export const BorderBg = {
+    row: ' ',
+    col: ' ',
+    tl: ' ', tr: ' ',
+    bl: ' ', br: ' '
+}
 
 export interface Padding {
     /**
      * Left padding
      */
-    left: number;
+    left?: number;
     /**
      * Same as left
      */
-    l: number;
+    l?: number;
     /**
      * Right padding
      */
-    right: number;
+    right?: number;
     /**
      * Same as right
      */
-    r: number;
+    r?: number;
     /**
      * Top padding
      */
-    top: number;
+    top?: number;
     /**
      * Same as top
      */
-    t: number;
+    t?: number;
     /**
      * Bottom padding
      */
-    bottom: number;
+    bottom?: number;
     /**
      * Same as bottom
      */
-    b: number;
+    b?: number;
 }
 export interface Border {
     /**
-     * Type of border. Default line
+     * Type of border
+     * @default 'line'
      */
-    type: 'line' | 'bg';
+    type?: 'line' | 'bg';
+    /**
+     * Type of border, if line is specified.
+     * @default 'single'
+     */
+    lineType?: Border_t | 'single' | 'arc' | 'dash' | 'double' | 'heavy' | 'heavydash';
     /**
      * Character to use for bg type
      */
-    ch: string;
+    ch?: string;
     /**
      * Element foreground color.
      */
@@ -62,11 +122,18 @@ export interface Border {
     /**
      * Element is bold
      */
-    bold: boolean;
+    bold?: boolean;
     /**
      * Element is underlined
      */
-    underline: boolean;
+    underline?: boolean;
+    /**
+     * Extra padding used to accomodate padding. Will not go below 1, change to a different number if needed for custom border
+     * Don't mess with it unless necessary
+     * @experimental
+     * @default 1
+     */
+    padding?: number;
 }
 export interface Scrollbar {
     /**
@@ -157,41 +224,48 @@ export interface ElementOptions {
      */
     border?: Border;
     /**
-     * Text content. Default ""
+     * Text content.
+     * @default ''
      */
     content?: string;
     /**
-     * Element will focus on click. Default true
+     * Element will focus on click.
+     * @default true
      */
     clickable?: boolean;
     /**
-     * Element is focused. Default false
+     * Element is focused.
+     * @default false
      */
     focused?: boolean;
     /**
-     * Element is hidden. Default false
+     * Element is hidden.
+     * @default false
      */
     hidden?: boolean;
     /**
-     * A text label (for borders). Defalt none
+     * A text label (for borders)
      */
     label?: string;
     //TODO: hovertext
 
     /**
-     * Text alignment. Default center.
+     * Text alignment
+     * @default left
      */
     align?: 'left' | 'center' | 'middle' | 'right';
     /**
-     * Text alignment, but vertical. Default center
+     * Text alignment, but vertical
      */
     valign?: 'top' | 'center' | 'middle' | 'bottom';
     /**
-     * Shrink to text content (overrides width and height). Default false
+     * Shrink to text content (overrides width and height)
+     * @default false
      */
     shrink?: boolean;
     /**
-     * Element padding (distance from edge of element to content). Default 0
+     * Element padding (distance from edge of element to content).
+     * @default 0
      */
     padding?: number | Padding;
     /**
@@ -229,19 +303,23 @@ export interface ElementOptions {
      */
     position?: {
         /**
-     * Text alignment. Default center.
-     */
+         * Text alignment
+         * @default 'left'
+         */
         align?: 'left' | 'center' | 'right';
         /**
-         * Text alignment, but vertical. Default center
+         * Text alignment, but vertical
+         * @default 'top'
          */
         valign?: 'top' | 'center' | 'bottom';
         /**
-         * Shrink to text content (overrides width and height). Default false
+         * Shrink to text content (overrides width and height)
+         * @default false
          */
         shrink?: boolean;
         /**
-         * Element padding (distance from edge of element to content). Default 0
+         * Element padding (distance from edge of element to content)
+         * @default 0
          */
         padding?: number | Padding;
         /**
@@ -276,7 +354,8 @@ export interface ElementOptions {
         bottom?: Keyword;
     }
     /**
-     * Element can scroll (if overflow happens). Default true
+     * Element can scroll (if overflow happens)
+     * @default true
      */
     scrollable?: boolean;
     /**
@@ -284,11 +363,13 @@ export interface ElementOptions {
      */
     scroll?: boolean;
     /**
-     * Background character. Default whitespace (" ")
+     * Background character.
+     * @default ' '
      */
     ch?: string;
     /**
      * Element can be dragged by mouse.
+     * @default false
      */
     draggable?: boolean;
     /**
@@ -296,7 +377,8 @@ export interface ElementOptions {
      */
     drag?: boolean;
     /**
-     * Element has a offset shadow.
+     * Element has a shadow.
+     * @default false
      */
     shadow?: boolean;
     /**
@@ -305,10 +387,12 @@ export interface ElementOptions {
     style?: Style;
     /**
      * When calculating positioning/size, whether to round down (floor). Default true (round down), change to false to round up
+     * @default true
      */
     floor?: boolean;
     /**
-     * Whether or not to resize the element if it overflowsoff screen. Default true, if false, cropping will still be done on render to prevent icky stuff
+     * Whether or not to resize the element if it overflows off screen. Default true, if false, cropping will still be done on render to prevent icky stuff
+     * @default false
      */
     resize?: boolean;
 }
@@ -324,13 +408,18 @@ export interface Tag {
     val?: string;
 }
 
-const _Node: new () => Omit<Node, 'parent' | 'children'> = Node;
+//const _Node: new <E extends ListenerSignature<E> = ListenerSignature<unknown>>() => Omit<Node, 'parent' | 'children'> = Node;
+
+export default interface Element {
+    genContent(ret: true, color?: Color_t): Mat;
+    genContent(ret: false, color?: Color_t): undefined;
+}
 
 /**
  * The base Element class, which all other rendered objects descend from.
  * @abstract
  */
-export default class Element extends _Node {
+export default class Element extends Node {
     /**
      * Absolute left. READ ONLY! It WILL mess up rendering if modified.
      * @readonly
@@ -402,6 +491,12 @@ export default class Element extends _Node {
     set height(height: Keyword) {
         this.calcPos({ height });
     }
+    get padding(): Required<Padding> {
+        return this._padding;
+    }
+    set padding(p: Padding) {
+        this._padding = this.constructPadding(p);
+    }
     _left: number;
     _right: number;
     _top: number;
@@ -409,6 +504,7 @@ export default class Element extends _Node {
     _width: number;
     _height: number;
     _content: string;
+    _padding: Required<Padding>;
     contentLen: number;
     contentWidth: number;
     contentHeight: number;
@@ -463,7 +559,10 @@ export default class Element extends _Node {
         this.style = {
             fg: (fg.isValid() ? fg : false) || 'default',
             bg: (bg.isValid() ? bg : false) || 'default',
-            border: opts.style?.border || opts.border,
+            border: opts.style?.border && opts.border ? {
+                ...opts.style.border,
+                ...opts.border
+            } : (opts.style?.border || opts.border),
             scrollbar: opts.style?.scrollbar,
             focus: opts.style?.focus,
             hover: opts.style?.hover
@@ -476,6 +575,8 @@ export default class Element extends _Node {
         this.calcPos({
             regenContent: false
         });
+        // padding
+        this._padding = this.constructPadding(opts.padding);
         // content (and ts defaults)
         this._content = '';
         this.contentLen = this.contentHeight = this.contentWidth = 0;
@@ -528,6 +629,41 @@ export default class Element extends _Node {
         // regen contentmat by calling setter
         if (opts?.regenContent ?? true) this.setContent(this.content);
     }
+    constructPadding(p: ElementOptions['padding']): Required<Padding> {
+        let l, r, t, b;
+        l = r = t = b = 0;
+        if (typeof p === 'object') {
+            l = p.left || p.l || 0;
+            r = p.right || p.r || 0;
+            t = p.top || p.t || 0;
+            b = p.bottom || p.b || 0;
+        } else if (!isNaN(Number(p))) {
+            l = r = t = b = Number(p);
+        }
+        const o = <Required<Padding>>{};
+        // create aliases
+        const pairs = [
+            ['l', 'left'],
+            ['r', 'right'],
+            ['t', 'top'],
+            ['b', 'bottom']
+        ]
+        for (const [act, ali] of pairs) { // ACTual/ALIas
+            Object.defineProperty(o, ali, {
+                get() {
+                    return this[act];
+                },
+                set(v: number) {
+                    this[act] = v;
+                }
+            });
+        }
+        o.l = l;
+        o.r = r;
+        o.t = t;
+        o.b = b;
+        return o;
+    }
     /**
      * Is keyword a percentage (50%, 25%+1, 70%-1, etc...)
      * @internal
@@ -575,7 +711,12 @@ export default class Element extends _Node {
     round(n: number): number {
         return Math[this.opts.floor ? 'floor' : 'ceil'](n);
     }
-    parseTags(s: string) {
+    /**
+     * Parse tags from a string
+     * @param s The string
+     * @returns An array of tag objects
+     */
+    parseTags(s: string): Tag[] {
         const a = s.split('');
         let tag = '';
         let val = '';
@@ -609,7 +750,7 @@ export default class Element extends _Node {
                         type: raw,
                         close: true
                     });
-                } else if (/open|close/i.test(raw)) {
+                } else if (raw.search(/open|close/i) >= 0) {
                     val += raw === 'open' ? '{' : '}';
                 } else {
                     tags.push({
@@ -618,7 +759,7 @@ export default class Element extends _Node {
                     });
                 }
                 tag = '';
-            } else if (/\n/.test(c)) {
+            } else if (c.search(/\n/) >= 0) {
                 pushVal();
                 tags.push({
                     type: 'newline',
@@ -632,29 +773,97 @@ export default class Element extends _Node {
         return tags;
     }
     /**
+     * Static (and base) version of isBorderT
+     * @remarks Only exists so that screen can test border types without an element instance
+     * @param b The variable to test
+     * @returns 
+     */
+    static _isBorderT(b: Border_t | string | undefined): b is Border_t {
+        if (typeof b !== 'object') return false;
+        const keys = Object.keys(b);
+        return ['row', 'col', 'tl', 'tr', 'bl', 'br'].every(k => keys.includes(k));
+    }
+    /**
+     * Instance version of isBorderT
+     * @param b The variable to test
+     */
+    isBorderT(b: Border_t | string | undefined): b is Border_t {
+        return Element._isBorderT(b);
+    }
+    /**
+     * For Screen type-checking
+     * @internal
+     * @param k Key
+     */
+    static _isBorderKey(k: string): k is keyof Border_t {
+        return ['row', 'col', 'tl', 'tr', 'bl', 'br'].includes(k);
+    }
+    genBorder(m: Mat, color = this.screen?.color) {
+        if (!this.style.border || !color) return m;
+        const lType = this.style.border.lineType;
+        let bd: Border_t;
+        if (this.style.border.type === 'bg') {
+            bd = BorderBg;
+        } else if (this.isBorderT(lType)) {
+            bd = lType;
+        } else {
+            switch (typeof lType === 'string' ? lType : 'single') {
+                case 'arc': bd = BorderArc; break;
+                case 'double': bd = BorderDouble; break;
+                case 'dash': bd = BorderDash; break;
+                case 'heavy': bd = BorderHeavy; break;
+                case 'heavydash': bd = BorderHeavyDash; break;
+                default: bd = Border;
+            }
+        }
+        const bg = color.parse(this.style.border.bg || 'default');
+        const fg = color.parse(this.style.border.fg || 'default');
+        const f = (c: string) => `${bg}${fg}${c}\x1b[0m`;
+        m.blk(0, 0, m.x, 1, f(bd.row));
+        m.blk(0, 0, 1, m.y, f(bd.col));
+        m.blk(0, m.y - 1, m.x, 1, f(bd.row));
+        m.blk(m.x - 1, 0, 1, m.y, f(bd.col));
+        m.xy(0, 0, f(bd.tl)); m.xy(m.x - 1, 0, f(bd.tr));
+        m.xy(0, m.y - 1, f(bd.bl)); m.xy(m.x - 1, m.y - 1, f(bd.br));
+        return m;
+    }
+    /**
      * Generate a Mat from the content
      * @internal
      */
-    genContent(color = this.screen?.color) {
+    genContent(ret = false, color = this.screen?.color) {
+        // main mat
         const mat = new Mat(this.width, this.height, '');
         if (!color) return;
-        // calculate the valign
-        let t = 0;
-        switch (this.opts.valign) {
-            case 'center':
-            case 'middle':
-                t = this.round(this.height / 2 - this.contentHeight / 2);
-                break;
-            case 'bottom':
-                t = this.height - this.contentHeight;
-                break;
-            default: t = 0;
-        }
 
         // render
         const tags = this.parseTags(this.content);
         console.error(tags);
-        const c = new Mat(this.width, this.height, '');
+        // set padding (nice for implementing border and later scrollbar)
+        // math.max will choose specified padding if it is both defined and bigger than 1, else it will default to 1
+        // if no border exists, border padding will be 0 (hence it not existing)
+        // final note: border padding is applied equally to all sides
+        const bdpad = this.style.border ? Math.max(this.style.border.padding || 1, 1) : 0;
+        // *2 bc border is on all sides
+        const wpad = this.padding.l + this.padding.r + (bdpad * 2);
+        const hpad = this.padding.t + this.padding.b + (bdpad * 2);
+        const lpad = this.padding.l + bdpad;
+        const tpad = this.padding.t + bdpad;
+        // usable content mat
+        const c = new Mat(this.width - wpad, this.height - hpad, '');
+        // calculate the valign (cmat hasnt been shrunk yet so values are usable to avoid more math and icky parenthissies)
+        let t = 0;
+        switch (this.opts.valign) {
+            case 'center':
+            case 'middle':
+                t = this.round(c.y / 2 - this.contentHeight / 2);
+                break;
+            case 'bottom':
+                t = c.y - this.contentHeight;
+                break;
+            default: t = 0;
+        }
+
         const align = (w: number, a = this.opts.align) => {
             let l = 0;
             switch (a) {
@@ -681,34 +890,31 @@ export default class Element extends _Node {
         let regen = false;
         //let finalized = false;
 
-        /*function close(type: string) {
-            switch (type) {
-                case 'fg':
-                    return color ? '\x1b[0m' : '';
-            }
-        }
-        function lastNewline(idx: number) {
-            for (let i = --idx; i > 0; i--) {
-                if (tags[i].type === 'newline') return i;
-            }
-            return -1;
-        }
-        /*function contentInLine(idx: number) {
-            return contentUntil(lastNewline(idx) + 1);
-        }*/
+        /**
+         * Content between idx and end, only accounting for content with specified alignment
+         * @param idx index
+         * @param a alignment
+         * @param all any alignment
+         * @returns 
+         */
         function contentUntil(idx: number, a: typeof al, all = false) {
             let l = 0;
             let nope = false;
             for (let i = idx; i < tags.length; i++) {
                 const t = tags[i];
                 if (t.type === 'newline') break;
-                else if (!all && alignRe.test(t.type) && t.type !== a) { // will not include anything not aligned the same way
+                else if (!all && t.type.search(alignRe) >= 0 && t.type !== a) { // will not include anything not aligned the same way
                     nope = !t.close; // if it is closing then set nope to true
                 }
                 else if (t.type === 'content' && !nope) l += t.val?.length || 0;
             }
             return l;
         }
+        /**
+         * is seperator coming up in line
+         * @param idx index
+         * @returns 
+         */
         function upcomingSep(idx: number) {
             for (let i = ++idx; i < tags.length; i++) {
                 const t = tags[i];
@@ -717,6 +923,11 @@ export default class Element extends _Node {
             }
             return false;
         }
+        /**
+         * have we passed a seperator
+         * @param idx you get the idea
+         * @returns 
+         */
         function prevSep(idx: number) {
             if (idx < 1) return false;
             for (let i = --idx; i > 0; i--) {
@@ -726,23 +937,20 @@ export default class Element extends _Node {
             }
             return false;
         }
-        /*function firstContentOrAlign(idx: number) {
-            if (idx < 1) return true;
-            for (let i = idx - 1; i > 0; i--) {
-                const t = tags[i];
-                if (t.type === 'content' || alignRe.test(t.type)) return true;
-            }
-            return false;
-        }*/
+        /**
+         * move x to the alignment position
+         * @param idx 
+         */
         function finalizeAlign(idx: number) {
             const a = upcomingSep(idx) ? 'left' : (prevSep(idx) ? 'right' : al);
             console.error(upcomingSep(idx), prevSep(idx))
             x = align(contentUntil(idx, a), a);
             //finalized = true;
         }
+
         for (let i = 0; i < tags.length; i++) {
             const t = tags[i];
-            if (alignRe.test(t.type)) {
+            if (t.type.search(alignRe) >= 0) {
                 if (t.type === '|') {
                     regen = true;
                 } else {
@@ -760,18 +968,20 @@ export default class Element extends _Node {
                 //console.error({fg: tc(fg), bg, _fg, _bg})
                 for (const ch of t.val.split('')) {
                     c.xy(x, y, `${_bg}${_fg}${ch}\x1b[0m`);
-                    console.error({c: `${_bg}${_fg}${ch}\x1b[0m`})
+                    //console.error({c: `${_bg}${_fg}${ch}\x1b[0m`})
                     x++;
                 }
             } else if (t.type === 'newline') {
+                // reset align, x then increment
                 al = this.opts.align;
                 x = 0;
                 y++;
             } else if (t.type === 'closeAll') {
+                // reset all, no increment
                 al = this.opts.align;
                 fg = this.style.fg;
                 bg = this.style.bg;
-            } else if (colorRe.test(t.type)) {
+            } else if (t.type.search(colorRe) >= 0) {
                 const col = t.type.replace(colorRe, '');
                 if (t.type.endsWith('-fg')) {
                     fg = t.close ? this.style.fg : col;
@@ -780,25 +990,36 @@ export default class Element extends _Node {
                 }
             }
         }
-        c.yShrink();
-        mat.overlay(0, t, c);
-        this.contentMat = mat;
+        c.yShrink(); // x alignment has already been applied, y is done at overlay
+        mat.overlay(lpad, t + tpad, c);
+        // apply border
+        mat.preProcess(this.genBorder.bind(this), color);
+        if (ret) return mat;
+        else this.contentMat = mat;
     }
     render() {
         if (!this.screen?.color) throw new Error('Render cannot be run if no screen is available');
         const color = this.screen.color;
         let width = this.width;
         let height = this.height;
-        console.error(width + this.aleft, height + this.atop);
+        //console.error(width + this.aleft, height + this.atop);
         const fg = color.parse(this.style.fg, false);
         const bg = color.parse(this.style.bg, true);
-        if (width + this.aleft > this.screen.width) width = this.screen.width - this.aleft;
+        let contentMat = this.contentMat;
+        if (width + this.aleft > this.screen.width) {
+            width = this.screen.width - this.aleft;
+            if (this.opts.resize) contentMat = this.genContent.bind({
+                ...this,
+                width,
+                height
+            })(true);
+        }
         if (height + this.atop > this.screen.height) height = this.screen.height - this.atop;
         const cm = new Mat(width, height);
-        console.error(width, height)
-        console.error(this.screen.width, this.screen.height);
+        //console.error(width, height)
+        //console.error(this.screen.width, this.screen.height);
         cm.blk(0, 0, width, height, `${fg}${bg}${this.opts.ch}\x1b[0m`);
-        cm.overlay(0, 0, this.contentMat);
+        cm.overlay(0, 0, contentMat);
         return cm;
     }
     /**

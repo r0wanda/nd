@@ -1,14 +1,16 @@
 import type Screen from './Screen.js';
 import Element from './Element.js';
-import { EventEmitter } from 'node:events';
+import { EventEmitter } from 'events';
+import { randomUUID } from 'crypto';
 
 /**
  * Miscellaneous data to be stored with a Node
  */
 export interface NodeData {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [key: string]: any;
 }
+
+export type fn<T> = (r: T) => void;
 
 /**
  * The base node, which is extended by Element and Screen. Very little functionality, mainly parent, children, and screen.
@@ -21,18 +23,23 @@ export default class Node extends EventEmitter {
     _data?: NodeData;
     $?: NodeData;
     type: string;
-    constructor() {
+    uuid: string;
+    /**
+     * The Node constructor
+     * @param uuidFunc The function to create a UUID, just needs to reate a unique string, otherwise weird things will happen to borders docking into nothingness
+     */
+    constructor(uuidFunc: () => string = randomUUID) {
         super();
         this.type = 'node';
         this.children = [];
+        this.uuid = uuidFunc();
     }
     pruneNodes(arr: Node[] = this.children): Element[] {
-        const a = <Element[]>arr;
-        return a.filter(ch => ch instanceof Element);
+        return <Element[]><unknown>arr.filter(ch => ch instanceof Element);
     }
     /**
      * Add node to screen
-     * @param scr The screen to 
+     * @param scr The screen to add
      * @returns 
      */
     setScreen(scr?: Screen, nodeAdded = false): number {
@@ -41,7 +48,7 @@ export default class Node extends EventEmitter {
         this.screen = scr;
         if (!nodeAdded) this.screen?.append(this);
         if (scr) this.emit('attach', scr);
-        else this.emit('detach', scr);
+        else this.emit('detach');
         return scr ? scr.children.length : -1;
     }
     removeScreen() {
@@ -51,7 +58,7 @@ export default class Node extends EventEmitter {
     setParent(parent?: Node) {
         const p = this.parent;
         this.parent = parent;
-        if (!parent && p) this.emit('remove', parent);
+        if (!parent && p) this.emit('remove', p);
         else if (parent && p) this.emit('reparent', parent, p);
         else if (parent) this.emit('adopt', parent);
     }

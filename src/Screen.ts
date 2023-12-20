@@ -1,15 +1,29 @@
+/* eslint no-useless-escape: 0 */
 import Mat from './Mat.js';
 import Node from './Node.js';
-import Element from './Element.js';
+import Element, { Border, BorderArc, BorderDash, BorderDouble, BorderHeavy, BorderHeavyDash } from './Element.js';
 import Color from './Color.js';
-import { Ansi } from './Constants.js';
 import Keys from './Keys.js';
 import tc from 'tinycolor2';
 import { minimatch } from 'minimatch';
 import isIntr from 'is-interactive';
-//import assert from 'node:assert';
+import assert from 'node:assert';
 
-import { type Key } from './Keys.js';
+import type { Key } from './Keys.js';
+import type { Border_t } from './Element.js';
+
+export const Ansi = {
+    cur: {
+        show: '\e[?25h',
+        hide: '\e[?25l',
+    },
+    scrn: {
+        alt: {
+            enter: '\e[?1049h',
+            exit: '\e[?1049l'
+        }
+    }
+}
 
 /**
  * Options for the Screen constructor
@@ -111,17 +125,18 @@ export interface Dims {
  * @internal
  */
 export interface KeyMatch {
-    val: {
-        mod: {
-            ctrl: boolean;
-            shift: boolean;
-            meta: boolean;
-        }
-        ch: string | RegExp;
-        glob: boolean;
-    }[];
+    val: Shorthand[];
     cb: (ch: string, key: Key | undefined) => void;
 }
+
+/**
+ * Return type of waitForKey
+ */
+export interface WaitForKey {
+    ch: string,
+    key: Key | undefined
+}
+
 /**
  * Options for Key
  */
@@ -137,10 +152,21 @@ export interface KeyOptions {
     shorthand?: boolean;
 }
 export interface Shorthand {
-    ctrl: boolean;
-    meta: boolean;
-    shift: boolean;
-    ch: string;
+    mod: {
+        ctrl: boolean;
+        meta: boolean;
+        shift: boolean;
+    }
+    ch: string | RegExp;
+    raw: string | RegExp;
+    glob: boolean;
+}
+export type toArrOutput<T> = T extends any[] ? T : T[];
+export interface BorderReg {
+    row: string[],
+    col: string[],
+    tl: string[], tr: string[],
+    bl: string[], br: string[]
 }
 
 export default class Screen extends Node {
@@ -176,6 +202,7 @@ export default class Screen extends Node {
     #resizeTimer?: ReturnType<typeof setTimeout>;
     #clearCoords: number[][];
     #fillCoords: (number | tc.ColorInput | string)[][];
+    #borderReg: BorderReg;
     keyReady: boolean;
     color: Color;
     keys: KeyMatch[];
@@ -186,6 +213,14 @@ export default class Screen extends Node {
         this.#title = '';
         this.#clearCoords = this.#fillCoords = [];
         this.keyReady = false;
+
+        this.#borderReg = {
+            row: [],
+            col: [],
+            tl: [], tr: [],
+            bl: [], br: []
+        }
+        this.constructBorderReg();
 
         this.opts = {
             resizeTimeout: opts.resizeTimeout || 300,
@@ -232,19 +267,23 @@ export default class Screen extends Node {
             if (!c) return;
             for (const _m of this.keys) {
                 k: for (const m of _m.val) {
-                    // cant check mods if key is undefined
-                    if ((m.mod.ctrl || m.mod.meta || m.mod.shift) && !key) continue k;
-                    // required mods are on else continue
-                    if ((m.mod.ctrl && !key!.ctrl) || (!m.mod.ctrl && key?.ctrl)) continue k;
-                    if ((m.mod.meta && !key!.meta) || (!m.mod.meta && key?.meta)) continue k;
-                    if ((m.mod.shift && !key!.shift) || (!m.mod.shift && key?.shift)) continue k;
-                    let mtch = false;
-                    if (m.glob && typeof m.ch === 'string') mtch = minimatch(c, m.ch);
-                    else if (this.isRegex(m.ch)) mtch = m.ch.test(c);
-                    else if (typeof m.ch === 'string') mtch = m.ch === c;
-                    if (mtch) {
-                        _m.cb(ch, key);
-                        break k;
+                    try {
+                        // cant check mods if key is undefined
+                        if ((m.mod.ctrl || m.mod.meta || m.mod.shift) && !key) continue k;
+                        // required mods are on else continue
+                        if ((m.mod.ctrl && !key!.ctrl) || (!m.mod.ctrl && key?.ctrl)) continue k;
+                        if ((m.mod.meta && !key!.meta) || (!m.mod.meta && key?.meta)) continue k;
+                        if ((m.mod.shift && !key!.shift) || (!m.mod.shift && key?.shift)) continue k;
+                        let mtch = false;
+                        if (m.glob && typeof m.ch === 'string') mtch = minimatch(c, m.ch);
+                        else if (this.isRegex(m.ch)) mtch = c.search(m.ch) >= 0;
+                        else if (typeof m.ch === 'string') mtch = m.ch === c;
+                        if (mtch) {
+                            _m.cb(ch, key);
+                            break k;
+                        }
+                    } catch (err) {
+                        // TODO: handle error
                     }
                 }
             }
@@ -261,6 +300,27 @@ export default class Screen extends Node {
         d.width = d.cols = d.columns = cols;
         d.height = d.rows = rows;
         return d;
+    }
+    /**
+     * Append to Border Registry
+     * @param bds Borders
+     */
+    constructBorderReg(bds: Border_t[] | Border_t = [Border, BorderArc, BorderDash, BorderDouble, BorderHeavy, BorderHeavyDash]) {
+        const _bds = this.toArr(bds);
+        for (const bd of _bds) {
+            if (Element._isBorderT(bd)) {
+                for (const [key, value] of Object.entries(bd)) {
+                    if (!Element._isBorderKey(key)) continue;
+                    this.#borderReg[key].push(value);
+                }
+            }
+        }
+    }
+    constructBorderRegex(key?: keyof BorderReg) {
+        let val: string[];
+        if (key && this.#borderReg[key]) val = this.#borderReg[key];
+        else val = Object.values(this.#borderReg).flat();
+        return new RegExp(val.join('|'));
     }
     /**
      * Test if a value is a RegExp
@@ -280,6 +340,10 @@ export default class Screen extends Node {
     }
 
     // key stuff
+    /**
+     * Enable key input
+     * @internal
+     */
     enableInput() {
         if (this.keyReady) return;
         Keys.emitKeypressEvents(this.opts.stdin);
@@ -287,48 +351,173 @@ export default class Screen extends Node {
         this.opts.stdin.resume();
         this.keyReady = true;
     }
-    parseShorthand(k: string): Shorthand {
+    /**
+     * Parse shorthand for keys
+     * @internal
+     * @param k The key to parse
+     */
+    parseShorthand(k: string, glob = true): Shorthand {
         const p = k.split('-').filter(i => i.length > 0);
         let ch = '';
         let ctrl = false;
         let meta = false;
         let shift = false;
-        if (p.length < 1) return { ctrl, meta, shift, ch };
+        if (p.length < 1) return {
+            mod: {
+                ctrl, meta, shift
+            },
+            ch,
+            raw: k,
+            glob
+        }
         for (let i = 0; i < p.length - 1; i++) {
             if (/^ctrl$|^control$|^c$/i.test(p[i] ?? '')) ctrl = true;
             if (/^meta$|^windows$|^win$|^m$/i.test(p[i] ?? '')) meta = true;
             if (/^shift$|^s$/i.test(p[i] ?? '')) shift = true;
         }
         ch = p[p.length - 1] ?? '';
-        return { ctrl, meta, shift, ch };
+        return {
+            mod: {
+                ctrl, meta, shift
+            },
+            ch,
+            raw: k,
+            glob
+        }
     }
-    key(keys: string[] | RegExp[] | string | RegExp, cb: (ch: string, key: Key | undefined) => void, opts?: KeyOptions): void {
+    /**
+     * Perform assert.deep(Strict)Equal
+     * @param act Actual
+     * @param exp Expected
+     * @returns Result
+     */
+    deepEq(act: unknown, exp: unknown, strict = true): boolean {
+        try {
+            assert[`deep${strict ? 'Strict' : ''}Equal`](act, exp);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+    eqShorthand(k1: string | RegExp, k2: Shorthand, opts?: KeyOptions): boolean {
+        const genSh = (k: string | RegExp) => {
+            const p: Shorthand = {
+                mod: {
+                    ctrl: false,
+                    meta: false,
+                    shift: false
+                },
+                ch: k,
+                raw: k,
+                glob: opts?.glob ?? true
+            }
+            if (opts?.shorthand && typeof k === 'string') {
+                Object.assign(p, this.parseShorthand(k));
+            }
+            return p;
+        }
+        return (k1 === k2.raw) ||
+        (this.isRegex(k1) && this.isRegex(k2.ch) && (k1.toString() === k2.ch.toString())) ||
+        this.deepEq(genSh(k1), k2);
+    }
+    /**
+     * Turn a value or array into an array
+     * @param v The value/array
+     * @param noDup No duplicates (default true)
+     */
+    toArr(v: any | any[], noDup = true): toArrOutput<typeof v> {
+        return noDup ? [...new Set(v)] : [...v];
+    }
+    /**
+     * Begin listening for a key(s)
+     * @param keys The key(s) to listen for, in raw, shorthand, or regex format
+     * @param cb The callback
+     * @param opts 
+     */
+    key(key: (string | RegExp)[] | string | RegExp, cb: (ch: string, key: Key | undefined) => void, opts?: KeyOptions): void {
         if (!this.keyReady) this.enableInput();
-        const _k = Array.isArray(keys) ? keys : [keys];
+        const _k: toArrOutput<typeof key> = this.toArr(key);
         this.keys.push({
             val: _k.map(k => {
-                let ch = k;
-                let ctrl = false;
-                let meta = false;
-                let shift = false;
-                if ((opts?.shorthand ?? true) && typeof k === 'string') {
-                    ({ ctrl, meta, shift, ch } = this.parseShorthand(k)); // parens for deconstruct
-                }
-                return {
+                const res: Shorthand = {
                     mod: {
-                        ctrl,
-                        meta,
-                        shift
+                        ctrl: false,
+                        meta: false,
+                        shift: false
                     },
-                    ch,
+                    ch: k,
+                    raw: k,
                     glob: opts?.glob ?? true
                 }
+                if ((opts?.shorthand ?? true) && typeof k === 'string') {
+                    Object.assign(res, this.parseShorthand(k));
+                }
+                return res;
             }),
             cb
         });
     }
+    /**
+     * Remove a key by callback or key input
+     * @param key The key(s) or callback to remove
+     */
+    removeKey(key: (string | RegExp)[] | string | RegExp | ((ch: string, key: Key | undefined) => void)) {
+        this.keys = <KeyMatch[]>this.keys.map(k => {
+            if (typeof key === 'function') {
+                if (k.cb === key) return null;
+            } else {
+                k.val = k.val.filter(v => (<toArrOutput<typeof key>>this.toArr(key)).some(_k => this.eqShorthand(_k, v, )));
+                return k;
+            }
+        }).filter(k => !!k);
+    }
+    /**
+     * Same as removeKey, except if a key is found in an instance, the entire instance is removed
+     * @param key The key(s) or callback to remove
+     */
+    removeAllKeyInstances(key: (string | RegExp)[] | string | RegExp | ((ch: string, key: Key | undefined) => void)) {
+        this.keys = <KeyMatch[]>this.keys.map(k => {
+            if (typeof key === 'function') {
+                if (k.cb === key) return null;
+            } else if (k.val.some(v => (<toArrOutput<typeof key>>this.toArr(key)).some(_k => this.eqShorthand(_k, v, )))) {
+                return null;
+            } else {
+                return k;
+            }
+        }).filter(k => !!k);
+    }
+    /**
+     * Clear all keys
+     */
+    clearKeys() {
+        this.keys = [];
+    }
+    /**
+     * Wait for a key
+     * @param keys 
+     * @param timeout 
+     * @param opts 
+     * @returns 
+     */
+    waitForKey(keys: (string | RegExp)[] | string | RegExp, timeout = (1000 * 60 * 10), opts?: KeyOptions): Promise<WaitForKey> {
+        return new Promise<WaitForKey>((r, j) => {
+            const listen = (ch: string, key: Key | undefined) => {
+                this.removeKey(listen);
+                r({ ch, key });
+            }
+            this.key(keys, listen, opts);
+            if (timeout > 0) setTimeout(() => {
+                // eslint-disable-next-line no-empty
+                try { this.removeKey(listen); } catch {}
+                j(new Error('Timeout exceeded waiting for key'));
+            }, timeout);
+        })
+    }
 
     // rendering
+    /**
+     * 
+     */
     sortDuplicates() {
         const i: number[] = [];
         for (const ch of this.pruneNodes()) {
@@ -341,6 +530,13 @@ export default class Screen extends Node {
             i.push(ch.index);
         }
     }
+    /**
+     * 
+     * @param x1 
+     * @param x2 
+     * @param y1 
+     * @param y2 
+     */
     clearRegion(x1: number, x2: number, y1: number, y2: number) {
         const w = x2 - x1;
         const h = y2 - y1;
@@ -350,14 +546,43 @@ export default class Screen extends Node {
             }
         }
     }
+    /**
+     * Fill a region with a color
+     * @param color Color
+     * @param ch Character
+     * @param x1 Start x
+     * @param x2 End x
+     * @param y1 Start y
+     * @param y2 End y
+     */
     fillRegion(color: tc.ColorInput, ch: string, x1: number, x2: number, y1: number, y2: number) {
         const w = x2 - x1;
         const h = y2 - y1;
+        if (w < 0 || h < 0) throw new RangeError(`Fill region (${x1},${y1}), (${x2}, ${y2}) width (${w}) or height (${h}) invalid`);
         for (let y = 0; y < h; y++) {
             for (let x = 0; x < w; x++) {
                 this.#fillCoords.push([x1 + x, y1 + y, color, ch]);
             }
         }
+    }
+
+    dock(m: Mat, chs: Element[]) {
+        //const boxRe = /[\u2500-\u257F]/gi;
+        chs = chs.filter(e => !!e.style.border);
+        for (let y = 0; y < m.y; y++) {
+            for (let x = 0; x < m.x; x++) {
+                if (chs.some(e =>
+                    ((x === e.aleft || x === e.aleft + e.width - 1) && y >= e.atop && y <= e.aleft + e.width) ||
+                    ((y === e.atop || y === e.atop + e.height - 1) && x >= e.aleft && x <= e.aleft + e.width)
+                )) {
+                    const c = m.m[y][x];
+                    if (c.search(this.constructBorderRegex()) >= 0) {
+                        m.xy(x, y, 'h')
+                    }
+                }
+            }
+        }
+        return m;
     }
     render() {
         this.emitDescendants('prerender');
@@ -380,6 +605,8 @@ export default class Screen extends Node {
                 m.xy(c[0], c[1], `${this.color.parse(c[2])}${c[3]}\x1b[0m`)
             }
         }
+        //if (this.opts.dockBorders)
+        m.preProcess(this.dock.bind(this), chs);
         const rend = m.render();
         this.write(rend);
         this.emitDescendants('render');

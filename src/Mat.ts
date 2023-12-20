@@ -36,6 +36,7 @@ export default class Mat {
      * @param val The value to set the character to
      */
     xy(x: number, y: number, val: string = this.blnk): void {
+        if (y >= this.y || x >= this.x) throw new RangeError('Setting value: Coordinates out of range')
         this.m[y][x] = val;
     }
     /**
@@ -53,11 +54,22 @@ export default class Mat {
     }
     /**
      * Apply a processing function to the current mat (returns a copy)
+     * @param fn The processing function
+     * @param args Any args to pass to the function
+     * @returns The processed mat
      */
-    preProcess(fn: (m: Mat) => Mat) {
+    preProcessRet(fn: (m: Mat, ...args: any[]) => Mat, ...args: any[]) {
         const mat = new Mat(this.x, this.y, this.blnk);
         mat.m = structuredClone(this.m);
-        return fn(mat);
+        return fn(mat, ...args);
+    }
+    /**
+     * Apply a processing function to the current mat
+     * @param fn The processing function
+     * @param args Any args to pass to the function
+     */
+    preProcess(fn: (m: Mat, ...args: any[]) => Mat, ...args: any[]) {
+        Object.assign(this, this.preProcessRet(fn, ...args));
     }
     /**
      * Render the final screen
