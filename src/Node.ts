@@ -1,7 +1,6 @@
 import type Screen from './Screen.js';
 import Element from './Element.js';
 import { EventEmitter } from 'events';
-import { randomUUID } from 'crypto';
 
 /**
  * Miscellaneous data to be stored with a Node
@@ -23,16 +22,10 @@ export default class Node extends EventEmitter {
     _data?: NodeData;
     $?: NodeData;
     type: string;
-    uuid: string;
-    /**
-     * The Node constructor
-     * @param uuidFunc The function to create a UUID, just needs to reate a unique string, otherwise weird things will happen to borders docking into nothingness
-     */
-    constructor(uuidFunc: () => string = randomUUID) {
+    constructor() {
         super();
         this.type = 'node';
         this.children = [];
-        this.uuid = uuidFunc();
     }
     pruneNodes(arr: Node[] = this.children): Element[] {
         return <Element[]><unknown>arr.filter(ch => ch instanceof Element);

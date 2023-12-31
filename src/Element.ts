@@ -5,6 +5,7 @@ import tc from 'tinycolor2';
 import length from 'string-length';
 
 import type Color_t from './Color.js';
+import type { Shd } from './Screen.js';
 
 export type Keyword = number | string | 'center' | 'left' | 'right' | 'top' | 'bottom' | 'shrink' | 'calc';
 export type Color = tc.ColorInput | 'default';
@@ -17,45 +18,52 @@ export interface Border_t {
     tr: string;
     bl: string;
     br: string;
+    type?: Shd;
 }
 
-export const Border = {
+export const Border: Border_t = {
     row: '─',
     col: '│',
     tl: '┌', tr: '┐',
-    bl: '└', br: '┘'
+    bl: '└', br: '┘',
+    type: 's'
 }
-export const BorderArc = {
+export const BorderArc: Border_t = {
     row: '─',
     col: '│',
     tl: '╭', tr: '╮',
-    bl: '╰', br: '╯'
+    bl: '╰', br: '╯',
+    type: 's'
 }
-export const BorderDash = {
+export const BorderDash: Border_t = {
     row: '┄',
     col: '┆',
     tl: '┌', tr: '┐',
-    bl: '└', br: '┘'
+    bl: '└', br: '┘',
+    type: 's'
 }
-export const BorderHeavy = {
+export const BorderHeavy: Border_t = {
     row: '━',
     col: '┃',
     tl: '┏', tr: '┓',
-    bl: '┗', br: '┛'
+    bl: '┗', br: '┛',
+    type: 'h'
 }
-export const BorderHeavyDash = {
+export const BorderHeavyDash: Border_t = {
     row: '┅',
     col: '┇',
     tl: '┏', tr: '┓',
-    bl: '┗', br: '┛'
+    bl: '┗', br: '┛',
+    type: 'h'
 }
-export const BorderDouble = {
+export const BorderDouble: Border_t = {
     row: '═',
     col: '║',
     tl: '╔', tr: '╗',
-    bl: '╚', br: '╝'
+    bl: '╚', br: '╝',
+    type: 'd'
 }
-export const BorderBg = {
+export const BorderBg: Border_t = {
     row: ' ',
     col: ' ',
     tl: ' ', tr: ' ',
@@ -629,6 +637,11 @@ export default class Element extends Node {
         // regen contentmat by calling setter
         if (opts?.regenContent ?? true) this.setContent(this.content);
     }
+    /**
+     * Construct Padding
+     * @param p A partial Padding object
+     * @returns A complete Padding object
+     */
     constructPadding(p: ElementOptions['padding']): Required<Padding> {
         let l, r, t, b;
         l = r = t = b = 0;
@@ -663,6 +676,25 @@ export default class Element extends Node {
         o.t = t;
         o.b = b;
         return o;
+    }
+    /**
+     * Check if a xy position is within the absolute bounds of this Element
+     * @param x 
+     * @param y 
+     * @returns The result
+     */
+    withinBounds(x: number, y: number): boolean {
+        return x >= this.aleft && x < this.aleft + this.width && y >= this.atop && y < this.atop + this.height;
+    }
+    /**
+     * Check if a xy position is on the edge of this Element
+     * @param x 
+     * @param y 
+     * @returns The result
+     */
+    isOnEdge(x: number, y: number): boolean {
+        return ((x === this.aleft || x === this.aleft + this.width - 1) && y >= this.atop && y <= this.aleft + this.width) ||
+               ((y === this.atop || y === this.atop + this.height - 1) && x >= this.aleft && x <= this.aleft + this.width);
     }
     /**
      * Is keyword a percentage (50%, 25%+1, 70%-1, etc...)
@@ -778,24 +810,17 @@ export default class Element extends Node {
      * @param b The variable to test
      * @returns 
      */
-    static _isBorderT(b: Border_t | string | undefined): b is Border_t {
+    static isBorderT(b: Border_t | string | undefined): b is Border_t {
         if (typeof b !== 'object') return false;
         const keys = Object.keys(b);
         return ['row', 'col', 'tl', 'tr', 'bl', 'br'].every(k => keys.includes(k));
-    }
-    /**
-     * Instance version of isBorderT
-     * @param b The variable to test
-     */
-    isBorderT(b: Border_t | string | undefined): b is Border_t {
-        return Element._isBorderT(b);
     }
     /**
      * For Screen type-checking
      * @internal
      * @param k Key
      */
-    static _isBorderKey(k: string): k is keyof Border_t {
+    static isBorderKey(k: string): k is keyof Border_t {
         return ['row', 'col', 'tl', 'tr', 'bl', 'br'].includes(k);
     }
     genBorder(m: Mat, color = this.screen?.color) {
@@ -804,7 +829,7 @@ export default class Element extends Node {
         let bd: Border_t;
         if (this.style.border.type === 'bg') {
             bd = BorderBg;
-        } else if (this.isBorderT(lType)) {
+        } else if (Element.isBorderT(lType)) {
             bd = lType;
         } else {
             switch (typeof lType === 'string' ? lType : 'single') {
@@ -966,10 +991,15 @@ export default class Element extends Node {
                 const _fg = color.parse(fg);
                 const _bg = color.parse(bg, true);
                 //console.error({fg: tc(fg), bg, _fg, _bg})
-                for (const ch of t.val.split('')) {
-                    c.xy(x, y, `${_bg}${_fg}${ch}\x1b[0m`);
-                    //console.error({c: `${_bg}${_fg}${ch}\x1b[0m`})
-                    x++;
+                // correctly place characters on mat
+                let val = '';
+                for (let i = 0; i < t.val.length; i++) {
+                    val += t.val.at(i);
+                    if (length(val) >= 1) {
+                        c.xy(x, y, `${_bg}${_fg}${val}\x1b[0m`);
+                        x += length(val);
+                        val = '';
+                    }
                 }
             } else if (t.type === 'newline') {
                 // reset align, x then increment

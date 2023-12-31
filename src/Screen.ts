@@ -1,16 +1,20 @@
 /* eslint no-useless-escape: 0 */
 import Mat from './Mat.js';
 import Node from './Node.js';
-import Element, { Border, BorderArc, BorderDash, BorderDouble, BorderHeavy, BorderHeavyDash } from './Element.js';
+import Element, { Border_t, Border, BorderArc, BorderDash, BorderDouble, BorderHeavy, BorderHeavyDash } from './Element.js';
 import Color from './Color.js';
 import Keys from './Keys.js';
+// @ts-ignore
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import Joints, { boxRe, heavyB } from './Joints.js';
 import tc from 'tinycolor2';
 import { minimatch } from 'minimatch';
 import isIntr from 'is-interactive';
+import strip from 'strip-ansi';
 import assert from 'node:assert';
 
 import type { Key } from './Keys.js';
-import type { Border_t } from './Element.js';
+//import type { Border_t } from './Element.js';
 
 export const Ansi = {
     cur: {
@@ -91,6 +95,11 @@ export interface ScreenOptions {
      * @default false
      */
     ignoreDockContrast: boolean;
+    /**
+     * Maximum times a sort will be ran to ensure no overlapping indexes
+     * @default 10
+     */
+    maxSortRecursion: number;
 }
 
 /**
@@ -162,11 +171,19 @@ export interface Shorthand {
     glob: boolean;
 }
 export type toArrOutput<T> = T extends any[] ? T : T[];
-export interface BorderReg {
-    row: string[],
-    col: string[],
-    tl: string[], tr: string[],
-    bl: string[], br: string[]
+export type Shd = 's' | 'h' | 'd';
+export interface BorderWants {
+    l?: Shd;
+    r?: Shd;
+    t?: Shd;
+    b?: Shd;
+    ch: string;
+}
+export interface BorderRegistry {
+    row: BorderWants[];
+    col: BorderWants[];
+    tl: BorderWants[]; tr: BorderWants[];
+    bl: BorderWants[]; br: BorderWants[];
 }
 
 export default class Screen extends Node {
@@ -202,25 +219,27 @@ export default class Screen extends Node {
     #resizeTimer?: ReturnType<typeof setTimeout>;
     #clearCoords: number[][];
     #fillCoords: (number | tc.ColorInput | string)[][];
-    #borderReg: BorderReg;
+    #bReg: BorderRegistry;
+    #initRender: boolean;
+    readonly emptyBReg: BorderRegistry;
     keyReady: boolean;
-    color: Color;
+    readonly color: Color;
     keys: KeyMatch[];
     constructor(opts: Partial<ScreenOptions> = {}) {
         super();
 
         this.type = 'screen';
         this.#title = '';
+        this.#initRender = false;
         this.#clearCoords = this.#fillCoords = [];
         this.keyReady = false;
-
-        this.#borderReg = {
+        this.emptyBReg = {
             row: [],
             col: [],
             tl: [], tr: [],
             bl: [], br: []
         }
-        this.constructBorderReg();
+        this.#bReg = this.constructBorderRegistry(Border, BorderArc, BorderDash, BorderDouble, BorderHeavy, BorderHeavyDash);
 
         this.opts = {
             resizeTimeout: opts.resizeTimeout || 300,
@@ -232,7 +251,8 @@ export default class Screen extends Node {
             stdin: opts.stdin || process.stdin,
             fullScreen: opts.fullScreen || false, // this too
             dockBorders: opts.dockBorders || true,
-            ignoreDockContrast: opts.ignoreDockContrast || false
+            ignoreDockContrast: opts.ignoreDockContrast || false,
+            maxSortRecursion: opts.maxSortRecursion || 10
         }
 
         // option checks
@@ -248,6 +268,7 @@ export default class Screen extends Node {
             this.width = d.cols;
             this.height = d.rows;
             this.emitDescendantsExSelf('resize');
+            if (this.#initRender) this.render();
         });
         this.opts.stdout.on('resize', () => {
             clearTimeout(this.#resizeTimer); // does nothing if undefined
@@ -289,6 +310,45 @@ export default class Screen extends Node {
             }
         });
     }
+    constructBorderWants(bd: Border_t, key: keyof Border_t): BorderWants {
+        if (!bd.type || bd.type.search(/s|h|d/g) < 0) throw new Error('constructBorderWants: Only provided borders, or borders with a specified type can be used');
+        const t = bd.type, b = t, l = t, r = t;
+        const bs = { ch: bd[key]! }
+        switch (key) {
+            case 'row': return { l, r, ...bs };
+            case 'col': return { t, b, ...bs };
+            case 'tl': return { b, r, ...bs };
+            case 'tr': return { b, l, ...bs };
+            case 'bl': return { t, r, ...bs };
+            case 'br': return { t, l, ...bs };
+            default: throw new Error('constructBorderWants: Only border character keys can be used')
+        }
+    }
+    constructBorderRegistry(...bds: Border_t[]): BorderRegistry {
+        // clone to avoid editing emptyBReg
+        const br: BorderRegistry = structuredClone(this.emptyBReg);
+        for (const bd of bds) {
+            for (const k in bd) {
+                if (!Element.isBorderKey(k) || k === 'type') continue;
+                br[k].push(this.constructBorderWants(bd, k));
+            }
+        }
+        return br;
+    }
+    appendBorderRegistry(...bds: BorderRegistry[]) {
+        // combine supplied borders
+        const bd = bds.reduce((p, c) => {
+            for (const k in c) {
+                if (!Element.isBorderKey(k) || k === 'type') continue;
+                p[k].push(...c[k]);
+            }
+            return p;
+        }, structuredClone(this.emptyBReg));
+        for (const k in this.#bReg) {
+            if (!Element.isBorderKey(k) || k === 'type') continue;
+            this.#bReg[k].push(...bd[k]);
+        }
+    }
     /**
      * Construct a Dims object with aliases from rows and cols
      * @param rows Rows
@@ -300,27 +360,6 @@ export default class Screen extends Node {
         d.width = d.cols = d.columns = cols;
         d.height = d.rows = rows;
         return d;
-    }
-    /**
-     * Append to Border Registry
-     * @param bds Borders
-     */
-    constructBorderReg(bds: Border_t[] | Border_t = [Border, BorderArc, BorderDash, BorderDouble, BorderHeavy, BorderHeavyDash]) {
-        const _bds = this.toArr(bds);
-        for (const bd of _bds) {
-            if (Element._isBorderT(bd)) {
-                for (const [key, value] of Object.entries(bd)) {
-                    if (!Element._isBorderKey(key)) continue;
-                    this.#borderReg[key].push(value);
-                }
-            }
-        }
-    }
-    constructBorderRegex(key?: keyof BorderReg) {
-        let val: string[];
-        if (key && this.#borderReg[key]) val = this.#borderReg[key];
-        else val = Object.values(this.#borderReg).flat();
-        return new RegExp(val.join('|'));
     }
     /**
      * Test if a value is a RegExp
@@ -399,7 +438,15 @@ export default class Screen extends Node {
             return false;
         }
     }
-    eqShorthand(k1: string | RegExp, k2: Shorthand, opts?: KeyOptions): boolean {
+    /**
+     * Check if a string, RegEx, or Shorthand is compatible with a Shorthand object
+     * @param k1 The input
+     * @param k2 The Shorthand to check
+     * @param opts 
+     * @returns 
+     */
+    eqShorthand(k1: string | RegExp | Shorthand, k2: Shorthand, opts?: KeyOptions): boolean {
+        if (typeof k1 !== 'string' && !this.isRegex(k1)) k1 = k1.raw; // elim shorthand
         const genSh = (k: string | RegExp) => {
             const p: Shorthand = {
                 mod: {
@@ -516,9 +563,9 @@ export default class Screen extends Node {
 
     // rendering
     /**
-     * 
+     * Clear out duplicate Element indexes
      */
-    sortDuplicates() {
+    clearDuplicates(recur = 0): Element[] {
         const i: number[] = [];
         for (const ch of this.pruneNodes()) {
             if (i.includes(ch.index)) {
@@ -529,6 +576,19 @@ export default class Screen extends Node {
             }
             i.push(ch.index);
         }
+        if (recur > this.opts.maxSortRecursion) throw new Error('Too much recursion, could not sort indexes')
+        return i.length !== [...new Set(i)].length ? this.clearDuplicates(recur) : this.pruneNodes();
+    }
+    /**
+     * Completely sort Elements, clearing duplicate indexes
+     * @param chs An array of elements to sort, assuming that duplicates have been cleared
+     * @returns A sorted array of elements
+     */
+    completeSort(chs?: Element[]): Element[] {
+        return (chs ?? this.clearDuplicates()).toSorted((a, b) => {
+            if (a.index === b.index) throw new Error('Indexes must not be equal');
+            return a.index > b.index ? -1 : 1;
+        });
     }
     /**
      * 
@@ -555,7 +615,7 @@ export default class Screen extends Node {
      * @param y1 Start y
      * @param y2 End y
      */
-    fillRegion(color: tc.ColorInput, ch: string, x1: number, x2: number, y1: number, y2: number) {
+    fillRegion(color: tc.ColorInput, ch: string, x1: number, x2: number, y1: number, y2: number): void {
         const w = x2 - x1;
         const h = y2 - y1;
         if (w < 0 || h < 0) throw new RangeError(`Fill region (${x1},${y1}), (${x2}, ${y2}) width (${w}) or height (${h}) invalid`);
@@ -565,21 +625,70 @@ export default class Screen extends Node {
             }
         }
     }
-
-    dock(m: Mat, chs: Element[]) {
-        //const boxRe = /[\u2500-\u257F]/gi;
-        chs = chs.filter(e => !!e.style.border);
+    /**
+     * Find the element with ownership over a certain pixel
+     * @param x 
+     * @param y 
+     * @param chs List of children to check
+     * @returns The element with ownership, or undefined if pixel is unclaimed
+     */
+    pixelOwnership(x: number, y: number, chs: Element[], sorted = false): Element | undefined {
+        if (!sorted) chs = this.completeSort(chs);
+        return chs.find(e => e.withinBounds(x, y))
+    }
+    classifyBorder(ch: string): BorderWants | undefined {
+        ch = strip(ch);
+        for (const k in this.#bReg) {
+            // ts being stupid and not making k keyof
+            const f = this.#bReg[<keyof BorderRegistry>k].find((v) => v.ch === ch);
+            if (f) return f;
+        }
+    }
+    dock(m: Mat, chs: Element[]): Mat {
+        chs = chs.toReversed().filter(e => !!e.style.border);
+        const isOnEdge = (x: number, y: number, err = false) => {
+            if (x < 0 || y < 0 || x >= m.x || y >= m.y) {
+                if (err) throw new RangeError(`isOnEdge: Coordinates (${x},${y}) out of range`);
+                return false;
+            }
+            return !!this.pixelOwnership(x, y, chs, true)?.isOnEdge(x, y);
+        }
         for (let y = 0; y < m.y; y++) {
             for (let x = 0; x < m.x; x++) {
-                if (chs.some(e =>
-                    ((x === e.aleft || x === e.aleft + e.width - 1) && y >= e.atop && y <= e.aleft + e.width) ||
-                    ((y === e.atop || y === e.atop + e.height - 1) && x >= e.aleft && x <= e.aleft + e.width)
-                )) {
-                    const c = m.m[y][x];
-                    if (c.search(this.constructBorderRegex()) >= 0) {
-                        m.xy(x, y, 'h')
-                    }
+                const c = m.m[y][x];
+                //if (!owner || c.search(boxRe) < 0 || !owner.isOnEdge(x, y)) continue;
+                if (c.search(boxRe) < 0 && !this.pixelOwnership(x, y, chs)?.isOnEdge(x, y)) continue;
+                const tR: string | undefined = isOnEdge(x, y - 1) ? m.m[y - 1]?.at(x) : undefined;
+                const bR: string | undefined = isOnEdge(x, y + 1) ? m.m[y + 1]?.at(x) : undefined;
+                const lR: string | undefined = isOnEdge(x - 1, y) ? m.m[y][x - 1] : undefined;
+                const rR: string | undefined = isOnEdge(x + 1, y) ? m.m[y][x + 1] : undefined;
+                let t: BorderWants | undefined;
+                let b: BorderWants | undefined;
+                let l: BorderWants | undefined;
+                let r: BorderWants | undefined;
+                if (tR) t = this.classifyBorder(tR);
+                if (bR) b = this.classifyBorder(bR);
+                if (lR) l = this.classifyBorder(lR);
+                if (rR) r = this.classifyBorder(rR);
+                const has = this.classifyBorder(c);
+                const wants: BorderWants = {
+                    t: t?.b,
+                    b: b?.t,
+                    l: l?.r,
+                    r: r?.l,
+                    ch: has?.ch || 's'
                 }
+                if (this.deepEq(has, wants)) continue;
+                // generate key of Joints (formatting is Shd clockwise (eg. ssss, shss, sdsd, etc...))
+                const key = `${wants?.t ?? ''}${wants?.r ?? ''}${wants.b ?? ''}${wants.l ?? ''}`;
+                if (key.length === 3) {
+                    const cat = Joints.triple[<keyof typeof Joints['triple']>`${t ? 't' : ''}${r ? 'r' : ''}${b ? 'b' : ''}${l ? 'l' : ''}`];
+                    const ch: string | undefined = cat[<keyof typeof cat>key];
+                    if (ch) m.xy(x, y, ch);
+                } else if (key.length === 4) {
+                    const ch: string | undefined = Joints.quad[<keyof typeof Joints['quad']>key];
+                    if (ch) m.xy(x, y, ch);
+                } 
             }
         }
         return m;
@@ -587,10 +696,7 @@ export default class Screen extends Node {
     render() {
         this.emitDescendants('prerender');
         const m = new Mat(this.width, this.height);
-        const chs = this.pruneNodes().sort((a, b) => {
-            if (a.index === b.index) throw new Error('Indexes must not be equal');
-            return a.index > b.index ? -1 : 1;
-        });
+        const chs = this.completeSort().toReversed();
         for (const ch of chs) {
             if (!(ch instanceof Element)) continue;
             m.overlay(ch.aleft, ch.atop, ch.render());
@@ -609,6 +715,7 @@ export default class Screen extends Node {
         m.preProcess(this.dock.bind(this), chs);
         const rend = m.render();
         this.write(rend);
+        if (!this.#initRender) this.#initRender = true;
         this.emitDescendants('render');
     }
     write(data: string | Uint8Array): void {

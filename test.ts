@@ -24,7 +24,8 @@ new nd.Element({
     left: '20%',
     top: '20%',
     border: {
-        type: 'line'
+        type: 'line',
+        lineType: 'heavy'
     }
 });
 scr.render();
