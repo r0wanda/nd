@@ -160,6 +160,9 @@ export interface KeyOptions {
      */
     shorthand?: boolean;
 }
+/**
+ * Object representation of a parsed key
+ */
 export interface Shorthand {
     mod: {
         ctrl: boolean;
@@ -170,8 +173,18 @@ export interface Shorthand {
     raw: string | RegExp;
     glob: boolean;
 }
+/**
+ * Output type of the toArr function
+ */
 export type toArrOutput<T> = T extends any[] ? T : T[];
+/**
+ * Shd: single, heavy, or double
+ */
 export type Shd = 's' | 'h' | 'd';
+/**
+ * Object of the wanted connections of a border connections
+ * Undefined for no connection, otherwise Shd to specify type of connection
+ */
 export interface BorderWants {
     l?: Shd;
     r?: Shd;
@@ -179,6 +192,9 @@ export interface BorderWants {
     b?: Shd;
     ch: string;
 }
+/**
+ * Border registry, easy way to look up border weight, and also extensible to new/user-defined borders
+ */
 export interface BorderRegistry {
     row: BorderWants[];
     col: BorderWants[];
@@ -310,6 +326,13 @@ export default class Screen extends Node {
             }
         });
     }
+    /**
+     * Generate BorderWants from a Border_t, and the corresponding key
+     * @internal
+     * @param bd The Border_t
+     * @param key The key
+     * @returns The constructed BorderWants
+     */
     constructBorderWants(bd: Border_t, key: keyof Border_t): BorderWants {
         if (!bd.type || bd.type.search(/s|h|d/g) < 0) throw new Error('constructBorderWants: Only provided borders, or borders with a specified type can be used');
         const t = bd.type, b = t, l = t, r = t;
@@ -324,6 +347,12 @@ export default class Screen extends Node {
             default: throw new Error('constructBorderWants: Only border character keys can be used')
         }
     }
+    /**
+     * Generate BorderRegistry from Border_t(s)
+     * @internal
+     * @param bds The Border_t(s)
+     * @returns The BorderRegistry
+     */
     constructBorderRegistry(...bds: Border_t[]): BorderRegistry {
         // clone to avoid editing emptyBReg
         const br: BorderRegistry = structuredClone(this.emptyBReg);
@@ -335,6 +364,10 @@ export default class Screen extends Node {
         }
         return br;
     }
+    /**
+     * Append Border_t(s) to the BorderRegistry
+     * @param bds The Border_t(s)
+     */
     appendBorderRegistry(...bds: BorderRegistry[]) {
         // combine supplied borders
         const bd = bds.reduce((p, c) => {
@@ -469,6 +502,7 @@ export default class Screen extends Node {
     }
     /**
      * Turn a value or array into an array
+     * @internal
      * @param v The value/array
      * @param noDup No duplicates (default true)
      */
@@ -564,6 +598,7 @@ export default class Screen extends Node {
     // rendering
     /**
      * Clear out duplicate Element indexes
+     * @internal
      */
     clearDuplicates(recur = 0): Element[] {
         const i: number[] = [];
@@ -581,7 +616,8 @@ export default class Screen extends Node {
     }
     /**
      * Completely sort Elements, clearing duplicate indexes
-     * @param chs An array of elements to sort, assuming that duplicates have been cleared
+     * @internal
+     * @param chs An array of elements to sort, assuming that duplicates have been cleared (will not be done automatically if this is supplied)
      * @returns A sorted array of elements
      */
     completeSort(chs?: Element[]): Element[] {
@@ -591,7 +627,7 @@ export default class Screen extends Node {
         });
     }
     /**
-     * 
+     * Clear a region of screen
      * @param x1 
      * @param x2 
      * @param y1 
@@ -627,6 +663,7 @@ export default class Screen extends Node {
     }
     /**
      * Find the element with ownership over a certain pixel
+     * @internal
      * @param x 
      * @param y 
      * @param chs List of children to check
@@ -636,6 +673,11 @@ export default class Screen extends Node {
         if (!sorted) chs = this.completeSort(chs);
         return chs.find(e => e.withinBounds(x, y))
     }
+    /**
+     * Lookup the BorderRegistry for the BorderWants of a border character
+     * @param ch The char
+     * @returns 
+     */
     classifyBorder(ch: string): BorderWants | undefined {
         ch = strip(ch);
         for (const k in this.#bReg) {
@@ -644,6 +686,13 @@ export default class Screen extends Node {
             if (f) return f;
         }
     }
+    /**
+     * A preprocessing function to dock borders
+     * @internal
+     * @param m The mat
+     * @param chs This Screen's children
+     * @returns 
+     */
     dock(m: Mat, chs: Element[]): Mat {
         chs = chs.toReversed().filter(e => !!e.style.border);
         const isOnEdge = (x: number, y: number, err = false) => {
@@ -656,31 +705,35 @@ export default class Screen extends Node {
         for (let y = 0; y < m.y; y++) {
             for (let x = 0; x < m.x; x++) {
                 const c = m.m[y][x];
-                //if (!owner || c.search(boxRe) < 0 || !owner.isOnEdge(x, y)) continue;
+                // continue if invalid for docking
                 if (c.search(boxRe) < 0 && !this.pixelOwnership(x, y, chs)?.isOnEdge(x, y)) continue;
+                // ~~yikes part starts~~
+                // gets characters to the left or right, undefined if out of range (eg. (-1, -1))
+                // variable name: t: top, b: bottom, etc
+                // tR, bR is topRaw, bottomRaw, etc. raw is the raw characters in the rendered mat that are to the top, bottom, etc of the current char
                 const tR: string | undefined = isOnEdge(x, y - 1) ? m.m[y - 1]?.at(x) : undefined;
                 const bR: string | undefined = isOnEdge(x, y + 1) ? m.m[y + 1]?.at(x) : undefined;
                 const lR: string | undefined = isOnEdge(x - 1, y) ? m.m[y][x - 1] : undefined;
                 const rR: string | undefined = isOnEdge(x + 1, y) ? m.m[y][x + 1] : undefined;
-                let t: BorderWants | undefined;
-                let b: BorderWants | undefined;
-                let l: BorderWants | undefined;
-                let r: BorderWants | undefined;
-                if (tR) t = this.classifyBorder(tR);
-                if (bR) b = this.classifyBorder(bR);
-                if (lR) l = this.classifyBorder(lR);
-                if (rR) r = this.classifyBorder(rR);
-                const has = this.classifyBorder(c);
-                const wants: BorderWants = {
+                // the processed BorderWants (see BorderWants definition at top of file)
+                // generated by querying the borderRegistry
+                const t: BorderWants | undefined = tR ? this.classifyBorder(tR) : undefined;
+                const b: BorderWants | undefined = bR ? this.classifyBorder(bR) : undefined;
+                const l: BorderWants | undefined = lR ? this.classifyBorder(lR) : undefined;
+                const r: BorderWants | undefined = rR ? this.classifyBorder(rR) : undefined;
+                const wants = this.classifyBorder(c);
+                const has: BorderWants = {
                     t: t?.b,
                     b: b?.t,
                     l: l?.r,
                     r: r?.l,
-                    ch: has?.ch || 's'
+                    ch: wants?.ch || 's'
                 }
+                // if all connections are satisfied, continue
                 if (this.deepEq(has, wants)) continue;
                 // generate key of Joints (formatting is Shd clockwise (eg. ssss, shss, sdsd, etc...))
-                const key = `${wants?.t ?? ''}${wants?.r ?? ''}${wants.b ?? ''}${wants.l ?? ''}`;
+                // not all joint combinations are possible, see top of Joints.ts
+                const key = `${has?.t ?? ''}${has?.r ?? ''}${has.b ?? ''}${has.l ?? ''}`;
                 if (key.length === 3) {
                     const cat = Joints.triple[<keyof typeof Joints['triple']>`${t ? 't' : ''}${r ? 'r' : ''}${b ? 'b' : ''}${l ? 'l' : ''}`];
                     const ch: string | undefined = cat[<keyof typeof cat>key];
@@ -688,11 +741,15 @@ export default class Screen extends Node {
                 } else if (key.length === 4) {
                     const ch: string | undefined = Joints.quad[<keyof typeof Joints['quad']>key];
                     if (ch) m.xy(x, y, ch);
-                } 
+                }
+                // ~~yikes part ends~~
             }
         }
         return m;
     }
+    /**
+     * Render the screen
+     */
     render() {
         this.emitDescendants('prerender');
         const m = new Mat(this.width, this.height);
@@ -711,14 +768,18 @@ export default class Screen extends Node {
                 m.xy(c[0], c[1], `${this.color.parse(c[2])}${c[3]}\x1b[0m`)
             }
         }
-        //if (this.opts.dockBorders)
-        m.preProcess(this.dock.bind(this), chs);
+        if (this.opts.dockBorders) m.preProcess(this.dock.bind(this), chs);
         const rend = m.render();
         this.write(rend);
         if (!this.#initRender) this.#initRender = true;
         this.emitDescendants('render');
     }
-    write(data: string | Uint8Array): void {
+    /**
+     * Write data to stdout
+     * @internal
+     * @param data The data to write to stdout
+     */
+    write(data: string): void {
         this.opts.stdout.write(data);
     }
 }
