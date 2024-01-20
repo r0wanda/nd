@@ -100,7 +100,7 @@ export default new class Keys {
      * Emit keypress events on a stream
      * @param _stream The stream to use
      */
-    emitKeypressEvents(_stream: ReadStream | KeyStream): void {
+    emitKeypressEvents(_stream: ReadStream | KeyStream = process.stdin): void {
         if (this.isKeyStream(_stream)) return;
         const stream = <KeyStream>_stream;
         stream._keypressDecoder = new StringDecoder('utf8');
@@ -432,14 +432,25 @@ export default new class Keys {
             //console.log(f);
             const cs = [f[1], f[2]];
             switch (f[0]) {
-                case 0: stream.emit('click', cs); break;
-                case 1: stream.emit('middleclick', cs); break;
-                case 2: stream.emit('rightclick', cs); break;
-                case 4: stream.emit('shiftclick', cs); break;
-                case 8: stream.emit('metaclick', cs); break;
-                case 16: stream.emit('ctrlclick', cs); break;
-                case 64: stream.emit('scrollup', cs); break;
-                case 65: stream.emit('scrolldown', cs); break;
+                case 0: stream.emit('click', ...cs); break;
+                case 1: stream.emit('middleclick', ...cs); break;
+                case 2: stream.emit('rightclick', ...cs); break;
+                case 4: stream.emit('shiftclick', ...cs); break;
+                case 8: stream.emit('metaclick', ...cs); break;
+                case 16: stream.emit('ctrlclick', ...cs); break;
+                case 32: stream.emit('drag', ...cs); break;
+                case 33: stream.emit('middledrag', ...cs); break;
+                case 34: stream.emit('rightdrag', ...cs); break;
+                case 35: stream.emit('move', ...cs); break;
+                case 48: stream.emit('ctrldrag', ...cs); break;
+                case 64: stream.emit('scrollup', ...cs); break;
+                case 65: stream.emit('scrolldown', ...cs); break;
+                // looking for better side button names
+                case 128: stream.emit('bottomside', ...cs); break;
+                case 129: stream.emit('topside', ...cs); break;
+                case 160: stream.emit('bottomsidedrag', ...cs); break;
+                case 161: stream.emit('topsidedrag', ...cs); break;
+
             }
         }
     }

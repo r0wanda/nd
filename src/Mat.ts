@@ -108,6 +108,21 @@ export default class Mat {
         }
         return c;
     }
+    pushRow(blnk = this.blnk, r?: Row_t) {
+        if (r?.length ?? 0 > this.x) throw new RangeError('pushRow: Width of supplied row is larger then width of Mat');
+        if (r) {
+            if (r.length < this.x) r.fill(blnk, r.length, this.x);
+            this.m.push(r);
+        } else this.m.push(Array(this.x).fill(blnk));
+        this.y++;
+    }
+    pushColumn(blnk = this.blnk, c?: Row_t) {
+        if (c?.length ?? 0 > this.x) throw new RangeError('pushColumn: Height of supplied column is larger then height of Mat');
+        for (let y = 0; y < this.y; y++) {
+            this.m[y].push(c?.[y] ?? blnk);
+        }
+        this.x++;
+    }
     removeColumn(x: number) {
         if (x >= this.x) throw new RangeError('Removing Column: Requested column position is out of range');
         for (let y = 0; y < this.y; y++) {

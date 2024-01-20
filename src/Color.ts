@@ -1,4 +1,4 @@
-import tc, { type ColorFormats} from 'tinycolor2';
+import tc, { type ColorFormats } from 'tinycolor2';
 import { deepEqual as assert } from "node:assert";
 
 export function c(r: number, g: number, b: number): ColorFormats.RGB {
@@ -6,7 +6,7 @@ export function c(r: number, g: number, b: number): ColorFormats.RGB {
 }
 
 /**
- * Average colors to default to (no 256 colors because they are hard to track down)
+ * Average colors to default to (no 256 colors because they are hard to track down, feel free to add support if you can)
  */
 export const Color4Bit: Map<number, ColorFormats.RGB> = new Map([
     [ 30, c(0, 0, 0) ],
@@ -87,7 +87,6 @@ export default class Color {
             const dB = this.distance(rgb, b);
             return dA > dB ? 1 : (dA === dB ? 0 : -1);
         });
-        console.error(bg, arr);
         return this.getByValue(map, arr[0]) + (bg ? 10 : 0);
     }
     /**
@@ -103,12 +102,20 @@ export default class Color {
     }
     /**
      * Use data provided to generate an ansi escape sequence for the provided color, or the closest color if support is limited.
+     * I feel it's safe to assume that all terminals used for this support color, as all semi-modern terminals support at least 4bit color (most/all of the time)
      * @param col The input color
      * @returns The escape code
      */
     parse(col: tc.ColorInput, bg: boolean = false) {
-        if (col === 'default') return '';
+        if (col === 'default' || !tc(col).isValid()) return '';
         if (!(col instanceof tc)) col = tc(col);
         return this.depth < 24 ? `\x1b[${this.closest(col, bg)}m` : this.rgb(col.toRgb(), bg);
+    }
+    /**
+     * Checks if instance has access to full 24bit color
+     */
+    fullColorSpace() {
+        // not sure why it would be above 24 but ig it would work
+        return this.depth >= 24;
     }
 }

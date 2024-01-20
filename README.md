@@ -4,7 +4,7 @@
 
 TODO: add gif
 
-***Where does the name come from?*** New Curses, but a new blessed design
+***Where does the name come from?*** New Curses, except it's a new blessed design
 
 # Install
 Npm:

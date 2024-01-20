@@ -229,7 +229,15 @@ export default class Screen extends Node {
         return this.#title;
     }
     set title(t: string) {
+        this.#title = t;
         this.write(`\x1b]0;${t}\x07`);
+    }
+    get bitDepth() {
+        return this.opts.bitDepth;
+    }
+    set bitDepth(d: number) {
+        this.opts.bitDepth = d;
+        this.color = new Color(this.opts.bitDepth);
     }
     #title: string;
     #resizeTimer?: ReturnType<typeof setTimeout>;
@@ -239,15 +247,17 @@ export default class Screen extends Node {
     #initRender: boolean;
     readonly emptyBReg: BorderRegistry;
     keyReady: boolean;
-    readonly color: Color;
+    color: Color;
     keys: KeyMatch[];
-    constructor(opts: Partial<ScreenOptions> = {}) {
+    mouseCoords: number[];
+    constructor(opts: Partial<ScreenOptions>) {
         super();
 
         this.type = 'screen';
         this.#title = '';
         this.#initRender = false;
         this.#clearCoords = this.#fillCoords = [];
+        this.mouseCoords = [0, 0];
         this.keyReady = false;
         this.emptyBReg = {
             row: [],
@@ -258,23 +268,23 @@ export default class Screen extends Node {
         this.#bReg = this.constructBorderRegistry(Border, BorderArc, BorderDash, BorderDouble, BorderHeavy, BorderHeavyDash);
 
         this.opts = {
-            resizeTimeout: opts.resizeTimeout || 300,
-            disableChecks: opts.disableChecks || false,
-            interactive: opts.interactive || opts.disableChecks ? true : isIntr(),
-            bitDepth: opts.bitDepth || opts.disableChecks ? 16 : process.stdout.getColorDepth(),
-            hideCursor: opts.hideCursor || false, //change when done
-            stdout: opts.stdout || process.stdout,
-            stdin: opts.stdin || process.stdin,
-            fullScreen: opts.fullScreen || false, // this too
-            dockBorders: opts.dockBorders || true,
-            ignoreDockContrast: opts.ignoreDockContrast || false,
-            maxSortRecursion: opts.maxSortRecursion || 10
+            resizeTimeout: opts.resizeTimeout ?? 300,
+            disableChecks: opts.disableChecks ?? false,
+            interactive: opts.interactive ?? opts.disableChecks ? true : isIntr(),
+            hideCursor: opts.hideCursor ?? false, //change when done
+            stdout: opts.stdout ?? process.stdout,
+            bitDepth: opts.bitDepth ?? opts.disableChecks ? 24 : (opts.stdout ?? process.stdout).getColorDepth(),
+            stdin: opts.stdin ?? process.stdin,
+            fullScreen: opts.fullScreen ?? false, // this too
+            dockBorders: opts.dockBorders ?? true,
+            ignoreDockContrast: opts.ignoreDockContrast ?? false,
+            maxSortRecursion: opts.maxSortRecursion ?? 10
         }
 
         // option checks
         if (!this.opts.interactive) throw new Error('Terminal is not interactive');
-        this.opts.hideCursor && this.write(Ansi.cur.hide);
-        this.opts.fullScreen && this.write(Ansi.scrn.alt.enter);
+        if (this.opts.hideCursor) this.write(Ansi.cur.hide);
+        if (this.opts.fullScreen) this.write(Ansi.scrn.alt.enter);
         process.on('exit', this.exit.bind(this));
 
         // stdout stuff
@@ -297,34 +307,83 @@ export default class Screen extends Node {
             n.setScreen(this, true);
         });
         this.color = new Color(this.opts.bitDepth);
+        this.enableInput();
         this.keys = [];
-        this.opts.stdin.on('keypress', (ch: string, key: Key | undefined) => {
-            // if ch is undef, use name, if neither then return :(
-            const c = key?.name || ch;
-            if (!c) return;
-            for (const _m of this.keys) {
-                k: for (const m of _m.val) {
-                    try {
-                        // cant check mods if key is undefined
-                        if ((m.mod.ctrl || m.mod.meta || m.mod.shift) && !key) continue k;
-                        // required mods are on else continue
-                        if ((m.mod.ctrl && !key!.ctrl) || (!m.mod.ctrl && key?.ctrl)) continue k;
-                        if ((m.mod.meta && !key!.meta) || (!m.mod.meta && key?.meta)) continue k;
-                        if ((m.mod.shift && !key!.shift) || (!m.mod.shift && key?.shift)) continue k;
-                        let mtch = false;
-                        if (m.glob && typeof m.ch === 'string') mtch = minimatch(c, m.ch);
-                        else if (this.isRegex(m.ch)) mtch = c.search(m.ch) >= 0;
-                        else if (typeof m.ch === 'string') mtch = m.ch === c;
-                        if (mtch) {
-                            _m.cb(ch, key);
-                            break k;
-                        }
-                    } catch (err) {
-                        // TODO: handle error
-                    }
-                }
+        this.opts.stdin.on('keypress', this.keyListener.bind(this));
+        this.opts.stdin.on('click', (x: number, y: number) => {
+            this.mouseCoords = [x, y];
+        });
+        this.opts.stdin.on('middleclick', (x: number, y: number) => {
+            this.mouseCoords = [x, y];
+        });
+        this.opts.stdin.on('rightclick', (x: number, y: number) => {
+            this.mouseCoords = [x, y];
+        });
+        this.opts.stdin.on('ctrlclick', (x: number, y: number) => {
+            this.mouseCoords = [x, y];
+        });
+        this.opts.stdin.on('drag', (x: number, y: number) => {
+            this.mouseCoords = [x, y];
+        });
+        this.opts.stdin.on('middledrag', (x: number, y: number) => {
+            this.mouseCoords = [x, y];
+        });
+        this.opts.stdin.on('rightdrag', (x: number, y: number) => {
+            this.mouseCoords = [x, y];
+        });
+        this.opts.stdin.on('move', (x: number, y: number) => {
+            this.mouseCoords = [x, y];
+        });
+        this.opts.stdin.on('ctrldrag', (x: number, y: number) => {
+            this.mouseCoords = [x, y];
+        });
+        this.opts.stdin.on('scrollup', (x: number, y: number) => {
+            this.mouseCoords = [x, y];
+            this.pixelOwnership(x, y, this.completeSort(), true)?.emit('scrollup');
+        });
+        this.opts.stdin.on('scrolldown', (x: number, y: number) => {
+            this.mouseCoords = [x, y];
+            const owner = this.pixelOwnership(x, y, this.completeSort(), true);
+            if (owner) {
+                console.error('owner');
+                owner.emit('scrolldown');
             }
         });
+        this.opts.stdin.on('bottomside', (x: number, y: number) => {
+            this.mouseCoords = [x, y];
+            this.emit('back');
+        });
+        this.opts.stdin.on('topside', (x: number, y: number) => {
+            this.mouseCoords = [x, y];
+            this.emit('forward');
+        });
+    }
+    keyListener(ch: string, key: Key | undefined) {
+        // if ch is undef, use name, if neither then return :(
+        const c = key?.name || ch;
+        if (!c) return;
+        for (const _m of this.keys) {
+            k: for (const m of _m.val) {
+                try {
+                    // cant check mods if key is undefined
+                    if ((m.mod.ctrl || m.mod.meta || m.mod.shift) && !key) continue k;
+                    // required mods are on else continue
+                    if ((m.mod.ctrl && !key!.ctrl) || (!m.mod.ctrl && key?.ctrl)) continue k;
+                    if ((m.mod.meta && !key!.meta) || (!m.mod.meta && key?.meta)) continue k;
+                    if ((m.mod.shift && !key!.shift) || (!m.mod.shift && key?.shift)) continue k;
+                    let mtch = false;
+                    if (m.glob && typeof m.ch === 'string') mtch = minimatch(c, m.ch);
+                    else if (this.isRegex(m.ch)) mtch = c.search(m.ch) >= 0;
+                    else if (typeof m.ch === 'string') mtch = m.ch === c;
+                    if (mtch) {
+                        _m.cb(ch, key);
+                        break k;
+                    }
+                } catch (err) {
+                    // TODO: handle error
+                }
+            }
+        }
     }
     /**
      * Generate BorderWants from a Border_t, and the corresponding key
@@ -406,9 +465,12 @@ export default class Screen extends Node {
      * @param proc Whether or not to call process.exit. Default false
      */
     exit(): void {
-        this.opts.hideCursor && this.write(Ansi.cur.show);
-        this.opts.fullScreen && this.write(Ansi.scrn.alt.exit);
-        this.keyReady && this.opts.stdin.pause();
+        if (this.opts.hideCursor) this.write(Ansi.cur.show);
+        if (this.opts.fullScreen) this.write(Ansi.scrn.alt.exit);
+        if (this.keyReady) {
+            Keys.disableMouse();
+            this.opts.stdin.pause();
+        }
     }
 
     // key stuff
@@ -419,6 +481,7 @@ export default class Screen extends Node {
     enableInput() {
         if (this.keyReady) return;
         Keys.emitKeypressEvents(this.opts.stdin);
+        Keys.enableMouse(this.opts.stdout);
         this.opts.stdin.setRawMode(true);
         this.opts.stdin.resume();
         this.keyReady = true;
@@ -768,6 +831,7 @@ export default class Screen extends Node {
                 m.xy(c[0], c[1], `${this.color.parse(c[2])}${c[3]}\x1b[0m`)
             }
         }
+        //console.error(this.opts)
         if (this.opts.dockBorders) m.preProcess(this.dock.bind(this), chs);
         const rend = m.render();
         this.write(rend);

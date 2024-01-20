@@ -1,14 +1,14 @@
 import Node from './Node.js';
 import Mat from './Mat.js';
 import Screen from './Screen.js';
+import Color from './Color.js'
 import tc from 'tinycolor2';
 import length from 'string-length';
 
-import type Color_t from './Color.js';
 import type { Shd } from './Screen.js';
 
 export type Keyword = number | string | 'center' | 'left' | 'right' | 'top' | 'bottom' | 'shrink' | 'calc';
-export type Color = tc.ColorInput | 'default';
+export type Color_t = tc.ColorInput | 'default';
 export type Tblr = 'top' | 'bottom' | 'left' | 'right';
 
 export interface Border_t {
@@ -122,11 +122,11 @@ export interface Border {
     /**
      * Element foreground color.
      */
-    fg?: Color;
+    fg?: Color_t;
     /**
      * Element background color.
      */
-    bg?: Color;
+    bg?: Color_t;
     /**
      * Element is bold
      */
@@ -147,11 +147,11 @@ export interface Scrollbar {
     /**
      * Element foreground color.
      */
-    fg?: Color;
+    fg?: Color_t;
     /**
      * Element background color.
      */
-    bg?: Color;
+    bg?: Color_t;
     /**
      * Element is bold
      */
@@ -165,11 +165,11 @@ export interface Style {
     /**
      * Element foreground color.
      */
-    fg?: Color;
+    fg?: Color_t;
     /**
      * Element background color.
      */
-    bg?: Color;
+    bg?: Color_t;
     /**
      * Border options
      */
@@ -191,11 +191,11 @@ export interface StyleReq extends Style {
     /**
      * Element background color.
      */
-    fg: Color;
+    fg: Color_t;
     /**
      * Element foreground color.
      */
-    bg: Color;
+    bg: Color_t;
 }
 
 export interface ElementOptions {
@@ -214,11 +214,11 @@ export interface ElementOptions {
     /**
      * Element foreground color. Try to put this under "style", for sake of organization
      */
-    fg?: Color;
+    fg?: Color_t;
     /**
      * Element background color. Try to put this under "style", for sake of organization
      */
-    bg?: Color;
+    bg?: Color_t;
     /**
      * Element is bold
      */
@@ -248,6 +248,7 @@ export interface ElementOptions {
     focused?: boolean;
     /**
      * Element is hidden.
+  *
      * @default false
      */
     hidden?: boolean;
@@ -419,8 +420,8 @@ export interface Tag {
 //const _Node: new <E extends ListenerSignature<E> = ListenerSignature<unknown>>() => Omit<Node, 'parent' | 'children'> = Node;
 
 export default interface Element {
-    genContent(ret: true, color?: Color_t): Mat;
-    genContent(ret: false, color?: Color_t): undefined;
+    genContent(ret: true, color?: Color): Mat;
+    genContent(ret: false, color?: Color): undefined;
 }
 
 /**
@@ -428,6 +429,7 @@ export default interface Element {
  * @abstract
  */
 export default class Element extends Node {
+    name: string;
     /**
      * Absolute left. READ ONLY! It WILL mess up rendering if modified.
      * @readonly
@@ -452,7 +454,8 @@ export default class Element extends Node {
     // the only class that is a node and not an element is screen, bc width/height &stuff work differently
     parent?: Element;
     children: Element[];
-    // yippee a bunch of (nearly, excluding content) identical getters/setters
+    scrollPos: number;
+    // yippee a bunch of (nearly) identical getters/setters
     get content(): string {
         return this._content;
     }
@@ -460,7 +463,7 @@ export default class Element extends Node {
         this._content = val;
         this.contentLen = length(val);
         this.contentWidth = val.split('\n').reduce((p, c) => length(c) > p ? length(c) : p, 0);
-        this.contentHeight = (val.match(/\n/g) || []).length + 1;
+        this.contentHeight = (val.match(/\n/g)?.length ?? -1) + 1;
         this.genContent();
     }
     get left(): number {
@@ -522,9 +525,12 @@ export default class Element extends Node {
     contentMat: Mat;
     renderMat?: Mat;
     readonly nPer: Percentage;
+    wport: number;
+    hport: number;
     constructor(opts: ElementOptions) {
         super();
         this.type = 'element';
+        this.name = '';
         this.parent = opts.parent instanceof Element ? opts.parent : undefined;
         this.on('resize', () => {
             this.calcPos();
@@ -538,32 +544,32 @@ export default class Element extends Node {
             offset: 0
         }
         this.opts = {
-            bold: opts.bold || false,
-            underline: opts.underline || false,
-            content: opts.content || '',
-            clickable: opts.clickable || false,
-            focused: opts.focused || false,
-            hidden: opts.hidden || false,
-            label: opts.label || '',
-            align: opts.align || opts.position?.align || 'left',
-            valign: opts.valign || opts.position?.valign || 'top',
-            shrink: opts.shrink || opts.position?.shrink || false,
-            padding: opts.padding || opts.position?.padding || 0,
-            width: opts.width || opts.position?.width || 'shrink',
-            height: opts.height || opts.position?.height || 'shrink',
-            left: opts.left || opts.position?.left || 'calc',
-            right: opts.right || opts.position?.right || 'calc',
-            top: opts.top || opts.position?.top || 'calc',
-            bottom: opts.bottom || opts.position?.bottom || 'calc',
-            scrollable: opts.scrollable || opts.scroll || true,
-            ch: opts.ch || ' ',
-            draggable: opts.draggable || opts.drag || false,
-            shadow: opts.shadow || false,
-            floor: opts.floor || true,
-            resize: opts.resize || true
+            bold: opts.bold ?? false,
+            underline: opts.underline ?? false,
+            content: opts.content ?? '',
+            clickable: opts.clickable ?? false,
+            focused: opts.focused ?? false,
+            hidden: opts.hidden ?? false,
+            label: opts.label ?? '',
+            align: opts.align ?? opts.position?.align ?? 'left',
+            valign: opts.valign ?? opts.position?.valign ?? 'top',
+            shrink: opts.shrink ?? opts.position?.shrink ?? false,
+            padding: opts.padding ?? opts.position?.padding ?? 0,
+            width: opts.width ?? opts.position?.width ?? 'shrink',
+            height: opts.height ?? opts.position?.height ?? 'shrink',
+            left: opts.left ?? opts.position?.left ?? 'calc',
+            right: opts.right ?? opts.position?.right ?? 'calc',
+            top: opts.top ?? opts.position?.top ?? 'calc',
+            bottom: opts.bottom ?? opts.position?.bottom ?? 'calc',
+            scrollable: opts.scrollable ?? opts.scroll ?? true,
+            ch: opts.ch ?? ' ',
+            draggable: opts.draggable ?? opts.drag ?? false,
+            shadow: opts.shadow ?? false,
+            floor: opts.floor ?? true,
+            resize: opts.resize ?? false
         }
-        const fg = tc(opts.style?.fg || opts.fg);
-        const bg = tc(opts.style?.bg || opts.bg);
+        const fg = tc(opts.style?.fg ?? opts.fg);
+        const bg = tc(opts.style?.bg ?? opts.bg);
         this.style = {
             fg: (fg.isValid() ? fg : false) || 'default',
             bg: (bg.isValid() ? bg : false) || 'default',
@@ -578,7 +584,8 @@ export default class Element extends Node {
         // defaults to make typescript happy
         this._width = this._height =
             this._left = this._right = this._top = this._bottom =
-            this.aleft = this.aright = this.atop = this.abottom = 0;
+            this.aleft = this.aright = this.atop = this.abottom = 
+            this.wport = this.hport = 0;
         // actually set position
         this.calcPos({
             regenContent: false
@@ -587,9 +594,23 @@ export default class Element extends Node {
         this._padding = this.constructPadding(opts.padding);
         // content (and ts defaults)
         this._content = '';
+        this.scrollPos = 0;
         this.contentLen = this.contentHeight = this.contentWidth = 0;
         this.contentMat = new Mat(0, 0);
         this.content = this.opts.content;
+
+        this.on('scrollup', () => {
+            console.error('scrlup')
+            if (this.scrollPos > 0) this.scrollPos--;
+            this.genContent();
+            this.screen?.render();
+        });
+        this.on('scrolldown', () => {
+            console.error('scrldown');
+            if (this.scrollPos + this.hport + 1 <= this.contentHeight) this.scrollPos++;
+            this.genContent();
+            this.screen?.render();
+        });
     }
     /**
      * Set content (reccomended to just set the "content" property)
@@ -852,6 +873,29 @@ export default class Element extends Node {
         m.xy(0, m.y - 1, f(bd.bl)); m.xy(m.x - 1, m.y - 1, f(bd.br));
         return m;
     }
+    shiftColor(c?: Color_t, amount?: number, def: tc.ColorInput = 'black'): tc.Instance {
+        const col = tc((c || '').toString());
+        if (!c || c === 'default' || !col.isValid()) return tc(def);
+        if (col.isDark()) return col.lighten(amount);
+        return col.darken(amount);
+    }
+    genScroll(m: Mat, color: Color) {
+        m.pushColumn();
+        // color choice
+        const bg = `${color.parse(this.shiftColor(this.style.scrollbar?.bg || this.style.bg), true)}${this.opts.ch}\x1b[0m`;
+        let fg;
+        if (this.style.scrollbar?.fg) fg = `${color.parse(this.style.scrollbar.fg)}`;
+        else fg = `${color.parse(this.shiftColor(this.style.scrollbar?.fg || this.style.bg))}${this.opts.ch}\x1b[0m`;
+        console.error([fg, bg]);
+        // calc
+        const nP = Math.floor(this.scrollPos / this.contentHeight * m.y);
+        const nY = Math.ceil(m.y / this.contentHeight * m.y);
+        // render
+        m.blk(m.x - 1, 0, 1, nP, bg);
+        m.blk(m.x - 1, nP, 1, nY, fg);
+        m.blk(m.x - 1, nP + nY, 1, m.y - nP - nY, bg);
+        return m;
+    }
     /**
      * Generate a Mat from the content
      * @internal
@@ -863,20 +907,28 @@ export default class Element extends Node {
 
         // render
         const tags = this.parseTags(this.content);
-        console.error(tags);
-        // set padding (nice for implementing border and later scrollbar)
+        // set padding (nice for implementing border and scrollbar)
         // math.max will choose specified padding if it is both defined and bigger than 1, else it will default to 1
         // if no border exists, border padding will be 0 (hence it not existing)
         // final note: border padding is applied equally to all sides
-        const bdpad = this.style.border ? Math.max(this.style.border.padding || 1, 1) : 0;
-        // *2 bc border is on all sides
-        const wpad = this.padding.l + this.padding.r + (bdpad * 2);
+        let bdpad = this.style.border ? Math.max(this.style.border.padding || 1, 1) : 0;
         const hpad = this.padding.t + this.padding.b + (bdpad * 2);
+        let scrlpad = this.contentHeight > this.height - hpad ? Number(!!this.opts.scrollable) : 0;
+
+        // checks
+        if (isNaN(scrlpad)) scrlpad = 0;
+        if (isNaN(bdpad)) bdpad = 0;
+
+        // *2 bc border is on all sides, scrlpad is only on right
+        const wpad = this.padding.l + this.padding.r + bdpad * 2 + scrlpad;
         const lpad = this.padding.l + bdpad;
         const tpad = this.padding.t + bdpad;
+
         // usable content mat
         const c = new Mat(this.width - wpad, this.height - hpad, '');
-        // calculate the valign (cmat hasnt been shrunk yet so values are usable to avoid more math and icky parenthissies)
+        this.wport = c.x;
+        this.hport = c.y;
+        // calculate the valign (c hasnt been shrunk yet so values are usable to avoid more math and icky parenthissies)
         let t = 0;
         switch (this.opts.valign) {
             case 'center':
@@ -968,12 +1020,27 @@ export default class Element extends Node {
          */
         function finalizeAlign(idx: number) {
             const a = upcomingSep(idx) ? 'left' : (prevSep(idx) ? 'right' : al);
-            console.error(upcomingSep(idx), prevSep(idx))
             x = align(contentUntil(idx, a), a);
             //finalized = true;
         }
+        /**
+         * Find index to start if starting at line `tgt`
+         * @param tgt Target starting line
+         * @returns The index
+         */
+        function lineIdx(tgt: number) {
+            let at = 0;
+            let i = 0;
+            for (; i < tags.length; i++) {
+                if (at === tgt) break;
+                if (tags[i].type === 'newline') at++;
+            }
+            console.error(tags[i]);
+            return i;
+        }
 
-        for (let i = 0; i < tags.length; i++) {
+        let i = this.scrollPos ? lineIdx(this.scrollPos) : 0;
+        for (; i < tags.length; i++) {
             const t = tags[i];
             if (t.type.search(alignRe) >= 0) {
                 if (t.type === '|') {
@@ -993,9 +1060,11 @@ export default class Element extends Node {
                 //console.error({fg: tc(fg), bg, _fg, _bg})
                 // correctly place characters on mat
                 let val = '';
-                for (let i = 0; i < t.val.length; i++) {
+                l: for (let i = 0; i < t.val.length; i++) {
+                    if (x > c.x) break;
                     val += t.val.at(i);
                     if (length(val) >= 1) {
+                        if (x >= c.x || y >= c.y) break l;
                         c.xy(x, y, `${_bg}${_fg}${val}\x1b[0m`);
                         x += length(val);
                         val = '';
@@ -1019,8 +1088,12 @@ export default class Element extends Node {
                     bg = t.close ? this.style.bg : col;
                 }
             }
+            if (y > c.y) break;
         }
-        c.yShrink(); // x alignment has already been applied, y is done at overlay
+        //c.yShrink(); // x alignment has already been applied, y is done at overlay
+        if (scrlpad) {
+            c.preProcess(this.genScroll.bind(this), color);
+        }
         mat.overlay(lpad, t + tpad, c);
         // apply border
         mat.preProcess(this.genBorder.bind(this), color);

@@ -1,10 +1,11 @@
 import nd from './index.js'
 const s = Date.now();
-const scr = new nd.Screen();
+const scr = new nd.Screen({
+});
 const el = new nd.Element({
     fg: 'red',
     bg: 'green',
-    content: '{center}{magenta-fg}hello world{/magenta-fg}{/center}{left}{blue-bg}left{/blue-bg}{/left}\n{right}right{/right}\n{red-bg}left seperator{|}right seperator{/red-bg}',
+    content: `{center}{magenta-fg}hello world{/magenta-fg}{/center}\n{left}{blue-bg}left{/blue-bg}{/left}\n{right}right{/right}\n{red-bg}left seperator{|}right seperator{/red-bg}${'\n'.repeat(30)}hi`,
     screen: scr,
     width: '50%',
     height: '50%',
@@ -14,7 +15,7 @@ const el = new nd.Element({
         type: 'line'
     }
 });
-new nd.Element({
+/*new nd.Element({
     fg: 'black',
     bg: 'blue',
     content: 'left─sep─era─tor{|}right seperator{/red-bg}',
@@ -25,9 +26,9 @@ new nd.Element({
     top: '20%',
     border: {
         type: 'line',
-        lineType: 'heavy'
+        lineType: 'double'
     }
-});
+});*/
 scr.render();
 const e = Date.now();
 console.error(`processed in ${e-s}ms`)
