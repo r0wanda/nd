@@ -4,9 +4,7 @@ import Node from './Node.js';
 import Element, { Border_t, Border, BorderArc, BorderDash, BorderDouble, BorderHeavy, BorderHeavyDash } from './Element.js';
 import Color from './Color.js';
 import Keys from './Keys.js';
-// @ts-ignore
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import Joints, { boxRe, heavyB } from './Joints.js';
+import Joints, { boxRe } from './Joints.js';
 import tc from 'tinycolor2';
 import { minimatch } from 'minimatch';
 import isIntr from 'is-interactive';
@@ -18,13 +16,13 @@ import type { Key } from './Keys.js';
 
 export const Ansi = {
     cur: {
-        show: '\e[?25h',
-        hide: '\e[?25l',
+        show: '\x1b[?25h',
+        hide: '\x1b[?25l',
     },
     scrn: {
         alt: {
-            enter: '\e[?1049h',
-            exit: '\e[?1049l'
+            enter: '\x1b[?1049h',
+            exit: '\x1b[?1049l'
         }
     }
 }
@@ -250,7 +248,7 @@ export default class Screen extends Node {
     color: Color;
     keys: KeyMatch[];
     mouseCoords: number[];
-    constructor(opts: Partial<ScreenOptions>) {
+    constructor(opts: Partial<ScreenOptions> = {}) {
         super();
 
         this.type = 'screen';
@@ -271,11 +269,11 @@ export default class Screen extends Node {
             resizeTimeout: opts.resizeTimeout ?? 300,
             disableChecks: opts.disableChecks ?? false,
             interactive: opts.interactive ?? opts.disableChecks ? true : isIntr(),
-            hideCursor: opts.hideCursor ?? false, //change when done
+            hideCursor: opts.hideCursor ?? true,
             stdout: opts.stdout ?? process.stdout,
             bitDepth: opts.bitDepth ?? opts.disableChecks ? 24 : (opts.stdout ?? process.stdout).getColorDepth(),
             stdin: opts.stdin ?? process.stdin,
-            fullScreen: opts.fullScreen ?? false, // this too
+            fullScreen: opts.fullScreen ?? true,
             dockBorders: opts.dockBorders ?? true,
             ignoreDockContrast: opts.ignoreDockContrast ?? false,
             maxSortRecursion: opts.maxSortRecursion ?? 10
@@ -769,7 +767,8 @@ export default class Screen extends Node {
             for (let x = 0; x < m.x; x++) {
                 const c = m.m[y][x];
                 // continue if invalid for docking
-                if (c.search(boxRe) < 0 && !this.pixelOwnership(x, y, chs)?.isOnEdge(x, y)) continue;
+                const owner = this.pixelOwnership(x, y, chs);
+                if (c.search(boxRe) < 0 || !owner?.isOnEdge(x, y) || !owner?.opts.dock) continue;
                 // ~~yikes part starts~~
                 // gets characters to the left or right, undefined if out of range (eg. (-1, -1))
                 // variable name: t: top, b: bottom, etc
@@ -847,3 +846,4 @@ export default class Screen extends Node {
         this.opts.stdout.write(data);
     }
 }
+

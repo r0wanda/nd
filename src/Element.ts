@@ -10,6 +10,7 @@ import type { Shd } from './Screen.js';
 export type Keyword = number | string | 'center' | 'left' | 'right' | 'top' | 'bottom' | 'shrink' | 'calc';
 export type Color_t = tc.ColorInput | 'default';
 export type Tblr = 'top' | 'bottom' | 'left' | 'right';
+export type Orientation = 'vertical' | 'horizontal' | 'vert' | 'horiz' | 'v' | 'h';
 
 export interface Border_t {
     row: string;
@@ -42,6 +43,9 @@ export const BorderDash: Border_t = {
     bl: '└', br: '┘',
     type: 's'
 }
+// not sure why but the right corners on heavy and double borders look slightly different sometimes
+// only on nerd fonts for me
+// please tell me why this happens
 export const BorderHeavy: Border_t = {
     row: '━',
     col: '┃',
@@ -104,7 +108,7 @@ export interface Padding {
      */
     b?: number;
 }
-export interface Border {
+export interface BorderOpts {
     /**
      * Type of border
      * @default 'line'
@@ -142,6 +146,11 @@ export interface Border {
      * @default 1
      */
     padding?: number;
+    /**
+     * For a 1x1 border, which direction to orient line
+     * @default 'v'
+     */
+    orientation?: Orientation;
 }
 export interface Scrollbar {
     /**
@@ -173,7 +182,7 @@ export interface Style {
     /**
      * Border options
      */
-    border?: Border;
+    border?: BorderOpts;
     /**
      * Scrollbar options
      */
@@ -230,7 +239,7 @@ export interface ElementOptions {
     /**
      * The border options. Try to put this under "style", for sake of organization
      */
-    border?: Border;
+    border?: BorderOpts;
     /**
      * Text content.
      * @default ''
@@ -280,13 +289,15 @@ export interface ElementOptions {
     /**
      * Element width. See type Keyword for more.
      * The "shrink" and "half" keywords are the only ones allowed
+     * @default 'shrink'
      */
-    width: Keyword;
+    width?: Keyword;
     /**
      * Element height. See type Keyword for more
      * The "shrink" and "half" keywords are the only ones allowed
+     * @default 'shrink'
      */
-    height: Keyword;
+    height?: Keyword;
     /**
      * Parent-relative left offset.
      * "center", "left", and "right" are the only allowed keywords.
@@ -400,10 +411,19 @@ export interface ElementOptions {
      */
     floor?: boolean;
     /**
+     * Enable or disable tag parsing
+     * @default true
+     */
+    tags?: boolean;
+    /**
      * Whether or not to resize the element if it overflows off screen. Default true, if false, cropping will still be done on render to prevent icky stuff
      * @default false
      */
     resize?: boolean;
+    /**
+     * Whether or not to dock border (if there is one)
+     */
+    dock?: boolean;
 }
 export type OptionsNoStyle = Omit<ElementOptions, 'fg' | 'bg' | 'style' | 'border' | 'position' | 'scroll' | 'drag' | 'parent' | 'screen' | 'children'>
 export interface Percentage {
@@ -411,6 +431,18 @@ export interface Percentage {
     offset: number;
 }
 
+/**
+ * Object representation of a tag
+ * types:
+ *  content: Text content type
+ *  newline: Self-explanatory
+ *  left/right/center: Alignment
+ *  open/close: '{' and '}' characters
+ *  *-fg/*-bg: Colors
+ *  closeAll {/}: Close all tags
+ * close: Whether tag is opening or closing
+ * val: Text content, ignored unless type is content
+ */
 export interface Tag {
     type: string;
     close: boolean;
@@ -566,7 +598,9 @@ export default class Element extends Node {
             draggable: opts.draggable ?? opts.drag ?? false,
             shadow: opts.shadow ?? false,
             floor: opts.floor ?? true,
-            resize: opts.resize ?? false
+            tags: opts.tags ?? true,
+            resize: opts.resize ?? false,
+            dock: opts.dock ?? true
         }
         const fg = tc(opts.style?.fg ?? opts.fg);
         const bg = tc(opts.style?.bg ?? opts.bg);
@@ -618,6 +652,9 @@ export default class Element extends Node {
      */
     setContent(val: string) {
         this.content = val;
+    }
+    isHorizontal(o: Orientation) {
+        return o.search(/horizontal|horiz|h/i) >= 0;
     }
     /**
      * Calculate position
@@ -755,7 +792,7 @@ export default class Element extends Node {
      * @returns 
      */
     wh(wh: 'w' | 'h' = 'w'): 'width' | 'height' {
-        return wh === 'w' ? 'width' : 'height'
+        return wh === 'w' ? 'width' : 'height';
     }
     /**
      * Round a number according to options. Will consistently either round up or down.
@@ -770,6 +807,23 @@ export default class Element extends Node {
      * @returns An array of tag objects
      */
     parseTags(s: string): Tag[] {
+        if (!this.opts.tags) {
+            const tags = [];
+            // see: https://en.wikipedia.org/wiki/Newline#Representation
+            const t = s.split(/[\n\r\036\025]/);
+            for (let i = 0; i < t.length; i++) {
+                tags.push({
+                    type: 'content',
+                    close: false,
+                    val: t[i]
+                });
+                if (i + 1 !== t.length) tags.push({
+                    type: 'newline',
+                    close: false
+                });
+            }
+            return tags;
+        }
         const a = s.split('');
         let tag = '';
         let val = '';
@@ -804,6 +858,7 @@ export default class Element extends Node {
                         close: true
                     });
                 } else if (raw.search(/open|close/i) >= 0) {
+                    // {open} and  {close} tags represent the '{' and '}' characters respectively
                     val += raw === 'open' ? '{' : '}';
                 } else {
                     tags.push({
@@ -812,7 +867,7 @@ export default class Element extends Node {
                     });
                 }
                 tag = '';
-            } else if (c.search(/\n/) >= 0) {
+            } else if (c.search(/[\n\r\036\025]/) >= 0) {
                 pushVal();
                 tags.push({
                     type: 'newline',
@@ -845,6 +900,7 @@ export default class Element extends Node {
         return ['row', 'col', 'tl', 'tr', 'bl', 'br'].includes(k);
     }
     genBorder(m: Mat, color = this.screen?.color) {
+        if (m.x < 1 || m.y < 1) return m;
         if (!this.style.border || !color) return m;
         const lType = this.style.border.lineType;
         let bd: Border_t;
@@ -865,12 +921,19 @@ export default class Element extends Node {
         const bg = color.parse(this.style.border.bg || 'default');
         const fg = color.parse(this.style.border.fg || 'default');
         const f = (c: string) => `${bg}${fg}${c}\x1b[0m`;
-        m.blk(0, 0, m.x, 1, f(bd.row));
-        m.blk(0, 0, 1, m.y, f(bd.col));
-        m.blk(0, m.y - 1, m.x, 1, f(bd.row));
-        m.blk(m.x - 1, 0, 1, m.y, f(bd.col));
-        m.xy(0, 0, f(bd.tl)); m.xy(m.x - 1, 0, f(bd.tr));
-        m.xy(0, m.y - 1, f(bd.bl)); m.xy(m.x - 1, m.y - 1, f(bd.br));
+        if (m.x === 1 && m.y === 1) {
+            if (this.isHorizontal(this.style.border.orientation ?? 'v')) m.xy(0, 0, bd.row);
+            else m.xy(0, 0, bd.col);
+        } else if (m.x === 1) m.blk(0, 0, 1, m.y, f(bd.col));
+        else if (m.y === 1) m.blk(0, 0, m.x, 1, f(bd.row));
+        else {
+            m.blk(0, 0, m.x, 1, f(bd.row));
+            m.blk(0, 0, 1, m.y, f(bd.col));
+            m.blk(0, m.y - 1, m.x, 1, f(bd.row));
+            m.blk(m.x - 1, 0, 1, m.y, f(bd.col));
+            m.xy(0, 0, f(bd.tl)); m.xy(m.x - 1, 0, f(bd.tr));
+            m.xy(0, m.y - 1, f(bd.bl)); m.xy(m.x - 1, m.y - 1, f(bd.br));
+        }
         return m;
     }
     shiftColor(c?: Color_t, amount?: number, def: tc.ColorInput = 'black'): tc.Instance {
@@ -888,8 +951,10 @@ export default class Element extends Node {
         else fg = `${color.parse(this.shiftColor(this.style.scrollbar?.fg || this.style.bg))}${this.opts.ch}\x1b[0m`;
         console.error([fg, bg]);
         // calc
-        const nP = Math.floor(this.scrollPos / this.contentHeight * m.y);
+        let nP = Math.floor(this.scrollPos / this.contentHeight * m.y);
         const nY = Math.ceil(m.y / this.contentHeight * m.y);
+        if (nP + nY === m.y && this.scrollPos + m.y !== this.contentHeight) nP--;
+        if (nP === 0 && this.scrollPos !== 0) nP++;
         // render
         m.blk(m.x - 1, 0, 1, nP, bg);
         m.blk(m.x - 1, nP, 1, nY, fg);
@@ -925,6 +990,7 @@ export default class Element extends Node {
         const tpad = this.padding.t + bdpad;
 
         // usable content mat
+        if (this.width - wpad < 0 || this.height - hpad < 0) throw new Error('Element padding (including border) may not exceed width or height');
         const c = new Mat(this.width - wpad, this.height - hpad, '');
         this.wport = c.x;
         this.hport = c.y;
@@ -1162,9 +1228,13 @@ export default class Element extends Node {
             switch (type) {
                 case 'top':
                 case 'bottom':
-                    return this.round(parent.height / 100 * p.percent + p.offset);
+                    if (p.percent === 100) return Math.ceil(parent.height + p.offset);
+                    else if (p.percent === 0) return Math.floor(p.offset);
+                    else return this.round(parent.height / 100 * p.percent + p.offset);
                 case 'left':
                 case 'right':
+                    if (p.percent === 100) return Math.ceil(parent.width + p.offset);
+                    else if (p.percent === 0) return Math.floor(p.offset);
                     return this.round(parent.width / 100 * p.percent + p.offset);
             }
         })();
@@ -1262,3 +1332,4 @@ export default class Element extends Node {
         }
     }
 }
+

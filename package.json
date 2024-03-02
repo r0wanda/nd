@@ -6,6 +6,7 @@
   "types": "dist/index.d.ts",
   "type": "module",
   "scripts": {
+    "prepublish": "tsc",
     "pretest": "tsc && eslint .",
     "test": "node dist/test.js 2> errfile",
     "lint": "eslint .",
@@ -27,8 +28,6 @@
   },
   "homepage": "https://github.com/r0wanda/nd#readme",
   "dependencies": {
-    "@types/node": "^20.8.7",
-    "@types/tinycolor2": "^1.4.5",
     "ansi-escapes": "^6.2.0",
     "is-interactive": "^2.0.0",
     "minimatch": "^9.0.3",
@@ -37,10 +36,11 @@
     "tinycolor2": "^1.6.0"
   },
   "devDependencies": {
+    "@types/node": "^20.11.8",
+    "@types/tinycolor2": "^1.4.6",
     "@typescript-eslint/eslint-plugin": "^6.8.0",
     "@typescript-eslint/parser": "^6.8.0",
     "eslint": "^8.52.0",
-    "ts-node": "^10.9.1",
     "typedoc": "^0.25.2",
     "typescript": "^5.2.2"
   }

@@ -1,11 +1,10 @@
 import nd from './index.js'
 const s = Date.now();
-const scr = new nd.Screen({
-});
-const el = new nd.Element({
+const scr = new nd.Screen();
+const el = new nd.Box({
     fg: 'red',
     bg: 'green',
-    content: `{center}{magenta-fg}hello world{/magenta-fg}{/center}\n{left}{blue-bg}left{/blue-bg}{/left}\n{right}right{/right}\n{red-bg}left seperator{|}right seperator{/red-bg}${'\n'.repeat(30)}hi`,
+    content: `{center}{magenta-fg}hello world{/magenta-fg}{/center}\n{left}{blue-bg}left{/blue-bg}{/left}\n{right}right{/right}\n{red-bg}left seperator{|}right seperator{/red-bg}${'\n'.repeat(50)}hi`,
     screen: scr,
     width: '50%',
     height: '50%',
@@ -14,6 +13,14 @@ const el = new nd.Element({
     border: {
         type: 'line'
     }
+});
+new nd.Line({
+    screen: scr,
+    orientation: 'v',
+    height: '100%',
+    top: 0,
+    left: '50%',
+    lineType: 'double'
 });
 /*new nd.Element({
     fg: 'black',
