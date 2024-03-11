@@ -23,6 +23,7 @@ export default class Line extends Element {
             default: bd = Border;
         }
         super(opts);
+        this.type = 'line';
         console.error(`line: ${this.height} full: ${this.screen?.height}`);
         const horiz = this.isHorizontal(opts.orientation ?? 'v');
         if (horiz) this.height = 1;

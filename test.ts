@@ -8,8 +8,8 @@ const el = new nd.Box({
     screen: scr,
     width: '50%',
     height: '50%',
-    left: '10%',
-    top: '10%',
+    left: '0%',
+    top: '0%',
     border: {
         type: 'line'
     }

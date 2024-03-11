@@ -4,8 +4,6 @@
 
 TODO: add gif
 
-***Where does the name come from?*** New Curses, except it's a new blessed design
-
 # Install
 Npm:
 ```sh

@@ -83,6 +83,8 @@ export default class Mat {
             }
             buf += '\n';
         }
+        // trim off last newline
+        buf = buf.slice(0, -1);
         return buf;
     }
     /**
