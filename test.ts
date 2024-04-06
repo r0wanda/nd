@@ -14,7 +14,7 @@ const el = new nd.Box({
         type: 'line'
     }
 });
-new nd.Line({
+const ln = new nd.Line({
     screen: scr,
     orientation: 'v',
     height: '100%',
@@ -22,6 +22,7 @@ new nd.Line({
     left: '50%',
     lineType: 'double'
 });
+ln.focus();
 /*new nd.Element({
     fg: 'black',
     bg: 'blue',
@@ -42,11 +43,11 @@ console.error(`processed in ${e-s}ms`)
 scr.key(['esc*', 'q', 'C-c'], () => {
     process.exit();
 });
-scr.key('h', () => {
+el.key('h', () => {
     el.height = '40%';
     scr.render();
 });
-scr.key('u', () => {
+el.key('u', () => {
     el.height = '50%';
     scr.render();
 });

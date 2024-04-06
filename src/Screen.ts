@@ -133,6 +133,8 @@ export interface Dims {
  */
 export interface KeyMatch {
     val: Shorthand[];
+    elem?: Element;
+    hover?: boolean;
     cb: (ch: string, key: Key | undefined) => void;
 }
 
@@ -157,6 +159,17 @@ export interface KeyOptions {
      * Use shorthand
      */
     shorthand?: boolean;
+    /**
+     * Internal option for registering element-specific keys
+     * @internal
+     * @remarks You could use this instead of Element.key, but why?
+     */
+    elem?: Element;
+    /**
+     * Whether or not to send key if element is being hovered (by default it will only work if focused)
+     * @remarks Only relavent to Element.key, not Screen.key
+     */
+    hover?: boolean;
 }
 /**
  * Object representation of a parsed key
@@ -310,6 +323,10 @@ export default class Screen extends Node {
         this.opts.stdin.on('keypress', this.keyListener.bind(this));
         this.opts.stdin.on('click', (x: number, y: number) => {
             this.mouseCoords = [x, y];
+            const elem = this.pixelOwnership(x, y, this.completeSort(), true);
+            if (!elem) return;
+            elem.focus();
+            elem.emit('click');
         });
         this.opts.stdin.on('middleclick', (x: number, y: number) => {
             this.mouseCoords = [x, y];
@@ -365,7 +382,7 @@ export default class Screen extends Node {
                 try {
                     // cant check mods if key is undefined
                     if ((m.mod.ctrl || m.mod.meta || m.mod.shift) && !key) continue k;
-                    // required mods are on else continue
+                    // required mods are on else skip
                     if ((m.mod.ctrl && !key!.ctrl) || (!m.mod.ctrl && key?.ctrl)) continue k;
                     if ((m.mod.meta && !key!.meta) || (!m.mod.meta && key?.meta)) continue k;
                     if ((m.mod.shift && !key!.shift) || (!m.mod.shift && key?.shift)) continue k;
@@ -374,7 +391,10 @@ export default class Screen extends Node {
                     else if (this.isRegex(m.ch)) mtch = c.search(m.ch) >= 0;
                     else if (typeof m.ch === 'string') mtch = m.ch === c;
                     if (mtch) {
-                        _m.cb(ch, key);
+                        if (_m.elem) {
+                            if (_m.hover && this.pixelOwnership(this.mouseCoords[0], this.mouseCoords[1], this.completeSort(), true) === _m.elem) _m.cb(ch, key);
+                            else if (this.focused === _m.elem) _m.cb(ch, key);
+                        } else _m.cb(ch, key);
                         break k;
                     }
                 } catch (err) {
@@ -596,6 +616,8 @@ export default class Screen extends Node {
                 }
                 return res;
             }),
+            elem: opts?.elem,
+            hover: opts?.hover,
             cb
         });
     }

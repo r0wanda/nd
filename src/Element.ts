@@ -5,7 +5,8 @@ import Color from './Color.js'
 import tc from 'tinycolor2';
 import length from 'string-length';
 
-import type { Shd } from './Screen.js';
+import type { Shd, KeyOptions } from './Screen.js';
+import type { Key } from './Keys.js';
 
 export type Keyword = number | string | 'center' | 'left' | 'right' | 'top' | 'bottom' | 'shrink' | 'calc';
 export type Color_t = tc.ColorInput | 'default';
@@ -800,6 +801,23 @@ export default class Element extends Node {
      */
     round(n: number): number {
         return Math[this.opts.floor ? 'floor' : 'ceil'](n);
+    }
+    /**
+     * Focus element
+     * @param thrw Whether or not to throw an error if not able to focus
+     */
+    focus(thrw = false): void {
+        if (!this.screen) {
+            if (thrw) throw new Error('Tried to focus element without a screen');
+            else return;
+        }
+        this.screen.focused = this;
+    }
+    key(key: (string | RegExp)[] | string | RegExp, cb: (ch: string, key: Key | undefined) => void, opts?: KeyOptions) {
+        opts = opts || {};
+        opts.elem = this;
+        if (!this.screen) throw new Error('Cannot register key without a screen');
+        this.screen.key(key, cb, opts);
     }
     /**
      * Parse tags from a string
