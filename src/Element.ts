@@ -4,6 +4,8 @@ import Screen from './Screen.js';
 import Color from './Color.js'
 import tc from 'tinycolor2';
 import length from 'string-length';
+import merge from 'deepmerge';
+import { isPlainObject } from 'is-plain-object';
 
 import type { Shd, KeyOptions } from './Screen.js';
 import type { Key } from './Keys.js';
@@ -499,6 +501,12 @@ export default class Element extends Node {
         this.contentHeight = (val.match(/\n/g)?.length ?? -1) + 1;
         this.genContent();
     }
+    get focused(): boolean {
+        return this.screen?.focused === this;
+    }
+    get hovered(): boolean {
+        return this.screen?.hovered === this;
+    }
     get left(): number {
         return this._left;
     }
@@ -819,6 +827,22 @@ export default class Element extends Node {
         if (!this.screen) throw new Error('Cannot register key without a screen');
         this.screen.key(key, cb, opts);
     }
+    mergeStyle(): StyleReq {
+        const m = <Style>merge.all([
+            this.style,
+            (this.focused && this.style.focus ? this.style.focus : {}),
+            (this.hovered && this.style.hover ? this.style.hover : {})
+        ], {
+            isMergeableObject: obj => {
+                return obj instanceof tc ? false : isPlainObject(obj)
+            }
+        });
+        const fg = tc(m?.fg);
+        const bg = tc(m?.bg);
+        m.fg = (fg.isValid() ? fg : false) || 'default';
+        m.bg = (bg.isValid() ? bg : false) || 'default';
+        return <StyleReq>m;
+    }
     /**
      * Parse tags from a string
      * @param s The string
@@ -918,11 +942,12 @@ export default class Element extends Node {
         return ['row', 'col', 'tl', 'tr', 'bl', 'br'].includes(k);
     }
     genBorder(m: Mat, color = this.screen?.color) {
+        const style = this.mergeStyle();
         if (m.x < 1 || m.y < 1) return m;
-        if (!this.style.border || !color) return m;
-        const lType = this.style.border.lineType;
+        if (!style.border || !color) return m;
+        const lType = style.border.lineType;
         let bd: Border_t;
-        if (this.style.border.type === 'bg') {
+        if (style.border.type === 'bg') {
             bd = BorderBg;
         } else if (Element.isBorderT(lType)) {
             bd = lType;
@@ -936,11 +961,11 @@ export default class Element extends Node {
                 default: bd = Border;
             }
         }
-        const bg = color.parse(this.style.border.bg || 'default');
-        const fg = color.parse(this.style.border.fg || 'default');
+        const bg = color.parse(style.border.bg || 'default');
+        const fg = color.parse(style.border.fg || 'default');
         const f = (c: string) => `${bg}${fg}${c}\x1b[0m`;
         if (m.x === 1 && m.y === 1) {
-            if (this.isHorizontal(this.style.border.orientation ?? 'v')) m.xy(0, 0, bd.row);
+            if (this.isHorizontal(style.border.orientation ?? 'v')) m.xy(0, 0, bd.row);
             else m.xy(0, 0, bd.col);
         } else if (m.x === 1) m.blk(0, 0, 1, m.y, f(bd.col));
         else if (m.y === 1) m.blk(0, 0, m.x, 1, f(bd.row));
@@ -961,12 +986,13 @@ export default class Element extends Node {
         return col.darken(amount);
     }
     genScroll(m: Mat, color: Color) {
+        const style = this.mergeStyle();
         m.pushColumn();
         // color choice
-        const bg = `${color.parse(this.shiftColor(this.style.scrollbar?.bg || this.style.bg), true)}${this.opts.ch}\x1b[0m`;
+        const bg = `${color.parse(style.scrollbar?.bg || this.shiftColor(style.bg), true)}${this.opts.ch}\x1b[0m`;
         let fg;
-        if (this.style.scrollbar?.fg) fg = `${color.parse(this.style.scrollbar.fg)}`;
-        else fg = `${color.parse(this.shiftColor(this.style.scrollbar?.fg || this.style.bg))}${this.opts.ch}\x1b[0m`;
+        if (style.scrollbar?.fg) fg = `${color.parse(style.scrollbar.fg)}`;
+        else fg = `${color.parse(style.scrollbar?.fg || this.shiftColor(style.bg))}${this.opts.ch}\x1b[0m`;
         console.error([fg, bg]);
         // calc
         let nP = Math.floor(this.scrollPos / this.contentHeight * m.y);
@@ -984,6 +1010,7 @@ export default class Element extends Node {
      * @internal
      */
     genContent(ret = false, color = this.screen?.color) {
+        const style = this.mergeStyle();
         // main mat
         const mat = new Mat(this.width, this.height, '');
         if (!color) return;
@@ -994,7 +1021,7 @@ export default class Element extends Node {
         // math.max will choose specified padding if it is both defined and bigger than 1, else it will default to 1
         // if no border exists, border padding will be 0 (hence it not existing)
         // final note: border padding is applied equally to all sides
-        let bdpad = this.style.border ? Math.max(this.style.border.padding || 1, 1) : 0;
+        let bdpad = style.border ? Math.max(style.border.padding || 1, 1) : 0;
         const hpad = this.padding.t + this.padding.b + (bdpad * 2);
         let scrlpad = this.contentHeight > this.height - hpad ? Number(!!this.opts.scrollable) : 0;
 
@@ -1045,8 +1072,8 @@ export default class Element extends Node {
 
         let x = 0;
         let y = 0;
-        let fg = this.style.fg;
-        let bg = this.style.bg;
+        let fg = style.fg || 'default';
+        let bg = style.bg || 'default';
         let al = this.opts.align;
         let regen = false;
         //let finalized = false;
@@ -1162,14 +1189,14 @@ export default class Element extends Node {
             } else if (t.type === 'closeAll') {
                 // reset all, no increment
                 al = this.opts.align;
-                fg = this.style.fg;
-                bg = this.style.bg;
+                fg = style.fg || 'default';
+                bg = style.bg || 'default';
             } else if (t.type.search(colorRe) >= 0) {
                 const col = t.type.replace(colorRe, '');
                 if (t.type.endsWith('-fg')) {
-                    fg = t.close ? this.style.fg : col;
+                    fg = t.close ? style.fg || 'default' : col;
                 } else if (t.type.endsWith('-bg')) {
-                    bg = t.close ? this.style.bg : col;
+                    bg = t.close ? style.bg || 'default' : col;
                 }
             }
             if (y > c.y) break;
@@ -1185,13 +1212,14 @@ export default class Element extends Node {
         else this.contentMat = mat;
     }
     render() {
+        const style = this.mergeStyle();
         if (!this.screen?.color) throw new Error('Render cannot be run if no screen is available');
         const color = this.screen.color;
         let width = this.width;
         let height = this.height;
         //console.error(width + this.aleft, height + this.atop);
-        const fg = color.parse(this.style.fg, false);
-        const bg = color.parse(this.style.bg, true);
+        const fg = color.parse(style.fg || 'default', false);
+        const bg = color.parse(style.bg || 'default', true);
         let contentMat = this.contentMat;
         if (width + this.aleft > this.screen.width) {
             width = this.screen.width - this.aleft;

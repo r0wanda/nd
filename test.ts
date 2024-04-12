@@ -12,6 +12,11 @@ const el = new nd.Box({
     top: '0%',
     border: {
         type: 'line'
+    },
+    style: {
+        hover: {
+            bg: 'brown'
+        }
     }
 });
 const ln = new nd.Line({

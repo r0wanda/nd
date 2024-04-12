@@ -216,6 +216,7 @@ export interface BorderRegistry {
 export default class Screen extends Node {
     opts: ScreenOptions;
     focused?: Node;
+    hovered?: Node;
     width: number;
     height: number;
     get cols() {
@@ -250,17 +251,37 @@ export default class Screen extends Node {
         this.opts.bitDepth = d;
         this.color = new Color(this.opts.bitDepth);
     }
+    get mouseCoords(): number[] {
+        return this.#mouseCoords
+    }
+    set mouseCoords(n: number[]) {
+        const x = typeof n[0] === 'number' && !isNaN(n[0]) ? n[0] : -1;
+        const y = typeof n[1] === 'number' && !isNaN(n[1]) ? n[1] : -1;
+        this.#mouseCoords = [x, y];
+        const oldHover = this.hovered;
+        this.hovered = this.pixelOwnership(this.mouseCoords[0], this.mouseCoords[1], this.#sortCache, true);
+        if (
+            (
+                this.hovered && this.hovered instanceof Element &&
+                Object.keys(this.hovered.style.hover ?? {}).length > 0 && this.#initRender
+            ) || (
+                oldHover && oldHover !== this.hovered && oldHover instanceof Element &&
+                Object.keys(oldHover.style.hover ?? {}).length > 0 && this.#initRender
+            )
+        ) this.render();
+    }
     #title: string;
     #resizeTimer?: ReturnType<typeof setTimeout>;
     #clearCoords: number[][];
     #fillCoords: (number | tc.ColorInput | string)[][];
     #bReg: BorderRegistry;
     #initRender: boolean;
+    #sortCache: Element[];
     readonly emptyBReg: BorderRegistry;
     keyReady: boolean;
     color: Color;
     keys: KeyMatch[];
-    mouseCoords: number[];
+    #mouseCoords: number[];
     constructor(opts: Partial<ScreenOptions> = {}) {
         super();
 
@@ -268,7 +289,7 @@ export default class Screen extends Node {
         this.#title = '';
         this.#initRender = false;
         this.#clearCoords = this.#fillCoords = [];
-        this.mouseCoords = [0, 0];
+        this.#mouseCoords = [-1, -1];
         this.keyReady = false;
         this.emptyBReg = {
             row: [],
@@ -277,6 +298,7 @@ export default class Screen extends Node {
             bl: [], br: []
         }
         this.#bReg = this.constructBorderRegistry(Border, BorderArc, BorderDash, BorderDouble, BorderHeavy, BorderHeavyDash);
+        // note: only use sortcache outside of rendering
 
         this.opts = {
             resizeTimeout: opts.resizeTimeout ?? 300,
@@ -298,6 +320,9 @@ export default class Screen extends Node {
         if (this.opts.fullScreen) this.write(Ansi.scrn.alt.enter);
         process.on('exit', this.exit.bind(this));
 
+        // initialize sort cache
+        this.#sortCache = this.completeSort();
+
         // stdout stuff
         this.width = this.opts.stdout.columns;
         this.height = this.opts.stdout.rows;
@@ -315,7 +340,8 @@ export default class Screen extends Node {
             }, this.opts.resizeTimeout);
         });
         this.on('_node', (n: Node) => {
-            n.setScreen(this, true);
+            this.#sortCache = this.completeSort();
+            if (this.children.includes(n)) n.setScreen(this, true);
         });
         this.color = new Color(this.opts.bitDepth);
         this.enableInput();
@@ -323,7 +349,7 @@ export default class Screen extends Node {
         this.opts.stdin.on('keypress', this.keyListener.bind(this));
         this.opts.stdin.on('click', (x: number, y: number) => {
             this.mouseCoords = [x, y];
-            const elem = this.pixelOwnership(x, y, this.completeSort(), true);
+            const elem = this.pixelOwnership(x, y, this.#sortCache, true);
             if (!elem) return;
             elem.focus();
             elem.emit('click');
@@ -354,11 +380,11 @@ export default class Screen extends Node {
         });
         this.opts.stdin.on('scrollup', (x: number, y: number) => {
             this.mouseCoords = [x, y];
-            this.pixelOwnership(x, y, this.completeSort(), true)?.emit('scrollup');
+            this.pixelOwnership(x, y, this.#sortCache, true)?.emit('scrollup');
         });
         this.opts.stdin.on('scrolldown', (x: number, y: number) => {
             this.mouseCoords = [x, y];
-            const owner = this.pixelOwnership(x, y, this.completeSort(), true);
+            const owner = this.pixelOwnership(x, y, this.#sortCache, true);
             if (owner) {
                 console.error('owner');
                 owner.emit('scrolldown');
@@ -392,7 +418,7 @@ export default class Screen extends Node {
                     else if (typeof m.ch === 'string') mtch = m.ch === c;
                     if (mtch) {
                         if (_m.elem) {
-                            if (_m.hover && this.pixelOwnership(this.mouseCoords[0], this.mouseCoords[1], this.completeSort(), true) === _m.elem) _m.cb(ch, key);
+                            if (_m.hover && this.hovered === _m.elem) _m.cb(ch, key);
                             else if (this.focused === _m.elem) _m.cb(ch, key);
                         } else _m.cb(ch, key);
                         break k;

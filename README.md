@@ -1,6 +1,6 @@
-# ND: New Designs
+# ND: New Design
 
-**New Designs** aims to replace [blessed](https://github.com/chjj/blessed) with a maintained, **new**, Typescript-based program. It tries to stay close to the blessed api, to avoid the need to change too much user-code.
+**New Design** aims to replace [blessed](https://github.com/chjj/blessed) with a maintained, **new**, Typescript-based program. It tries to stay close to the blessed api, to avoid the need to change too much user-code.
 
 TODO: add gif
 
