@@ -24,5 +24,5 @@ jobs:
           source-directory: 'docs'
           destination-github-username: 'r0wanda'
           destination-repository-name: 'nd-docs'
-          user-email: rowan.dev.email@gmai.com
+          user-email: rowan.dev.email@gmail.com
           target-branch: main
