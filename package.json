@@ -31,7 +31,6 @@
     "ansi-escapes": "^6.2.0",
     "deepmerge": "^4.3.1",
     "is-interactive": "^2.0.0",
-    "is-plain-object": "jcwillox/is-plain-object#patch-1",
     "minimatch": "^9.0.3",
     "string-length": "^6.0.0",
     "strip-ansi": "^7.1.0",

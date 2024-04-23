@@ -1,13 +1,21 @@
+/**
+ * Matrix row
+ */
 export type Row_t = Array<string>;
 /**
  * Raw matrix
  */
 export type Mat_t = Array<Row_t>;
+
 /**
  * A 2-dimensional character matrix (used to additively render elements to screen)
  * @remarks The origin is the top/left corner, not the center.
+ * @remarks This is not marked as internal as users can directly access it in preprocessing stacks
  */
 export default class Mat {
+    /**
+     * 
+     */
     m: Mat_t;
     x: number;
     y: number;
@@ -53,14 +61,34 @@ export default class Mat {
         }
     }
     /**
-     * Apply a processing function to the current mat (returns a copy)
+     * Duplicate this Mat
+     * @returns A copy of this mat
+     */
+    duplicate() {
+        const mat = new Mat(this.x, this.y, this.blnk);
+        if (!structuredClone) throw new Error('structuredClone cannot be found, probably because of an outdated node.js version.');
+        mat.m = structuredClone(this.m);
+        return mat;
+    }
+    /**
+     * Shorthand for Mat.duplicate
+     * @returns A copy of this mat
+     */
+    dupe() {
+        return this.duplicate();
+    }
+
+    // preprocessing functions
+    // note: im not sure if the term preprocess is correct
+    // there was originally going to be a stack of preprocessing functions done before render
+    /**
+     * Apply a processing function to a copy of the current mat
      * @param fn The processing function
      * @param args Any args to pass to the function
      * @returns The processed mat
      */
     preProcessRet(fn: (m: Mat, ...args: any[]) => Mat, ...args: any[]) {
-        const mat = new Mat(this.x, this.y, this.blnk);
-        mat.m = structuredClone(this.m);
+        const mat = this.dupe();
         return fn(mat, ...args);
     }
     /**
@@ -70,6 +98,33 @@ export default class Mat {
      */
     preProcess(fn: (m: Mat, ...args: any[]) => Mat, ...args: any[]) {
         Object.assign(this, this.preProcessRet(fn, ...args));
+    }
+    /**
+     * Indiscriminately process pixels from a copy of the current mat
+     * @param fn The processing function
+     * @param bind Set the value of `this` in the function to the current mat (default true)
+     * @param args Any args to pass to the function
+     * @returns The processed mat
+     */
+    preProcessPixelsRet(fn: (px: string, ...args: any[]) => string, bind = true, ...args: any[]) {
+        const mat = this.dupe();
+        if (bind) fn = fn.bind(mat);
+        for (let y = 0; y < mat.y; y++) {
+            for (let x = 0; x < mat.x; x++) {
+                mat.xy(x, y, fn(mat.m[y][x], ...args));
+            }
+        }
+        return mat;
+    }
+    /**
+     * Indiscriminately process pixels from the current mat
+     * @remarks If any advanced preprocessing needs to be done, 
+     * @param fn The processing function
+     * @param bind Set the value of `this` in the function to the current mat (default true)
+     * @param args Any args to pass to the function.
+     */
+    preProcessPixels(fn: (px: string, ...args: any[]) => string, bind = true, ...args: any[]) {
+        Object.assign(this, this.preProcessPixelsRet(fn, bind, ...args));
     }
     /**
      * Render the final screen

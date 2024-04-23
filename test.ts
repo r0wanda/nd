@@ -1,10 +1,17 @@
 import nd from './index.js'
-const s = Date.now();
+const tm = () => {
+    const h = process.hrtime();
+    return Math.round(h[0] * 1e6 + h[1] / 1000);
+}
+const s = tm();
 const scr = new nd.Screen();
+let t = tm();
 const el = new nd.Box({
     fg: 'red',
     bg: 'green',
-    content: `{center}{magenta-fg}hello world{/magenta-fg}{/center}\n{left}{blue-bg}left{/blue-bg}{/left}\n{right}right{/right}\n{red-bg}left seperator{|}right seperator{/red-bg}${'\n'.repeat(50)}hi`,
+    bold: true,
+    underline: true,
+    content: `{center}{magenta-fg}hello {/bold}world{/magenta-fg}{/center}\n{left}{blue-bg}left{/blue-bg}{/left}\n{right}right{/right}\n{red-bg}left seperator{|}right seperator{/red-bg}${'\n'.repeat(50)}hi`,
     screen: scr,
     width: '50%',
     height: '50%',
@@ -19,6 +26,8 @@ const el = new nd.Box({
         }
     }
 });
+console.error(`box in ${tm()-t}μs`);
+t = tm();
 const ln = new nd.Line({
     screen: scr,
     orientation: 'v',
@@ -28,6 +37,7 @@ const ln = new nd.Line({
     lineType: 'double'
 });
 ln.focus();
+console.error(`line in ${tm()-t}μs`);
 /*new nd.Element({
     fg: 'black',
     bg: 'blue',
@@ -42,9 +52,10 @@ ln.focus();
         lineType: 'double'
     }
 });*/
+t = tm();
 scr.render();
-const e = Date.now();
-console.error(`processed in ${e-s}ms`)
+console.error(`render in ${tm()-t}μs`)
+console.error(`done in ${tm()-s}μs`)
 scr.key(['esc*', 'q', 'C-c'], () => {
     process.exit();
 });

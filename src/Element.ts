@@ -1,11 +1,12 @@
 import Node from './Node.js';
 import Mat from './Mat.js';
-import Screen from './Screen.js';
+import Screen, { Ansi } from './Screen.js';
 import Color from './Color.js'
 import tc from 'tinycolor2';
 import length from 'string-length';
 import merge from 'deepmerge';
-import { isPlainObject } from 'is-plain-object';
+import { isPlainObject } from './is-plain-object.js';
+import stripAnsi from 'strip-ansi';
 
 import type { Shd, KeyOptions } from './Screen.js';
 import type { Key } from './Keys.js';
@@ -233,10 +234,12 @@ export interface ElementOptions {
     bg?: Color_t;
     /**
      * Element is bold
+     * Setting bold is the eqivalent of adding a {bold} tag to the beginning of content, so add a {/bold} tag to cancel
      */
     bold?: boolean;
     /**
      * Element is underlined
+     * Setting bold is the eqivalent of adding a {underline} tag to the beginning of content, so add a {/underline} tag to cancel
      */
     underline?: boolean;
     /**
@@ -427,6 +430,10 @@ export interface ElementOptions {
      * Whether or not to dock border (if there is one)
      */
     dock?: boolean;
+    /**
+     * Whether or not to strip ansi escape codes when setting content
+     */
+    stripAnsi?: boolean;
 }
 export type OptionsNoStyle = Omit<ElementOptions, 'fg' | 'bg' | 'style' | 'border' | 'position' | 'scroll' | 'drag' | 'parent' | 'screen' | 'children'>
 export interface Percentage {
@@ -495,11 +502,17 @@ export default class Element extends Node {
         return this._content;
     }
     set content(val: string) {
-        this._content = val;
-        this.contentLen = length(val);
-        this.contentWidth = val.split('\n').reduce((p, c) => length(c) > p ? length(c) : p, 0);
-        this.contentHeight = (val.match(/\n/g)?.length ?? -1) + 1;
+        this._content = this.opts.stripAnsi ? stripAnsi(val) : val;
         this.genContent();
+    }
+    get contentLen(): number {
+        return length(this.content);
+    }
+    get contentWidth(): number {
+        return this.content.split('\n').reduce((p, c) => length(c) > p ? length(c) : p, 0);
+    }
+    get contentHeight(): number {
+        return (this.content.match(/\n/g)?.length ?? -1) + 1;
     }
     get focused(): boolean {
         return this.screen?.focused === this;
@@ -549,6 +562,7 @@ export default class Element extends Node {
     set padding(p: Padding) {
         this._padding = this.constructPadding(p);
     }
+    // raw attributes
     _left: number;
     _right: number;
     _top: number;
@@ -557,9 +571,14 @@ export default class Element extends Node {
     _height: number;
     _content: string;
     _padding: Required<Padding>;
-    contentLen: number;
-    contentWidth: number;
-    contentHeight: number;
+    /**
+     * Original options object
+     * @readonly
+     */
+    readonly options: ElementOptions;
+    /**
+     * Processed and usable options object
+     */
     opts: Required<OptionsNoStyle>;
     style: StyleReq;
     index: number;
@@ -572,6 +591,7 @@ export default class Element extends Node {
         super();
         this.type = 'element';
         this.name = '';
+        this.options = opts;
         this.parent = opts.parent instanceof Element ? opts.parent : undefined;
         this.on('resize', () => {
             this.calcPos();
@@ -609,7 +629,8 @@ export default class Element extends Node {
             floor: opts.floor ?? true,
             tags: opts.tags ?? true,
             resize: opts.resize ?? false,
-            dock: opts.dock ?? true
+            dock: opts.dock ?? true,
+            stripAnsi: opts.stripAnsi ?? false
         }
         const fg = tc(opts.style?.fg ?? opts.fg);
         const bg = tc(opts.style?.bg ?? opts.bg);
@@ -638,7 +659,6 @@ export default class Element extends Node {
         // content (and ts defaults)
         this._content = '';
         this.scrollPos = 0;
-        this.contentLen = this.contentHeight = this.contentWidth = 0;
         this.contentMat = new Mat(0, 0);
         this.content = this.opts.content;
 
@@ -656,11 +676,12 @@ export default class Element extends Node {
         });
     }
     /**
-     * Set content (reccomended to just set the "content" property)
+     * Set content (reccomended to just set the "content" property unless using ansi strip)
      * @param val The content value
+     * @param strip Strip ansi escape codes
      */
-    setContent(val: string) {
-        this.content = val;
+    setContent(val: string, strip = this.opts.stripAnsi) {
+        this.content = strip ? stripAnsi(val) : val;
     }
     isHorizontal(o: Orientation) {
         return o.search(/horizontal|horiz|h/i) >= 0;
@@ -1074,6 +1095,8 @@ export default class Element extends Node {
         let y = 0;
         let fg = style.fg || 'default';
         let bg = style.bg || 'default';
+        let bold = this.opts.bold;
+        let ul = this.opts.underline;
         let al = this.opts.align;
         let regen = false;
         //let finalized = false;
@@ -1168,6 +1191,8 @@ export default class Element extends Node {
                 }
                 const _fg = color.parse(fg);
                 const _bg = color.parse(bg, true);
+                const _bold = bold ? Ansi.attr.bold : '';
+                const _ul = ul ? Ansi.attr.ul : '';
                 //console.error({fg: tc(fg), bg, _fg, _bg})
                 // correctly place characters on mat
                 let val = '';
@@ -1176,7 +1201,7 @@ export default class Element extends Node {
                     val += t.val.at(i);
                     if (length(val) >= 1) {
                         if (x >= c.x || y >= c.y) break l;
-                        c.xy(x, y, `${_bg}${_fg}${val}\x1b[0m`);
+                        c.xy(x, y, `${_bg}${_fg}${_bold}${_ul}${val}\x1b[0m`);
                         x += length(val);
                         val = '';
                     }
@@ -1191,6 +1216,10 @@ export default class Element extends Node {
                 al = this.opts.align;
                 fg = style.fg || 'default';
                 bg = style.bg || 'default';
+            } else if (t.type === 'bold') {
+                bold = !t.close;
+            } else if (t.type === 'underline') {
+                ul = !t.close;
             } else if (t.type.search(colorRe) >= 0) {
                 const col = t.type.replace(colorRe, '');
                 if (t.type.endsWith('-fg')) {

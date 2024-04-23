@@ -24,6 +24,10 @@ export const Ansi = {
             enter: '\x1b[?1049h',
             exit: '\x1b[?1049l'
         }
+    },
+    attr: {
+        bold: '\x1b[1m',
+        ul: '\x1b[4m'
     }
 }
 
@@ -37,17 +41,17 @@ export interface ScreenOptions {
      */
     resizeTimeout: number;
     /**
-     * Disable terminal checks (eg. interactive, colors) (not reccomended)
+     * Disable terminal checks (eg. interactive, colors) (not recommended)
      * @default false
      */
     disableChecks: boolean;
     /**
-     * Override inteactive-ness check (not reccomended)
+     * Override inteactive-ness check (not recommended)
      * @default false
      */
     interactive: boolean;
     /**
-     * Manually set terminal color depth (not reccomended).
+     * Manually set terminal color depth (not recommended).
      * @default The terminal color depth
      */
     bitDepth: number;
@@ -260,6 +264,7 @@ export default class Screen extends Node {
         this.#mouseCoords = [x, y];
         const oldHover = this.hovered;
         this.hovered = this.pixelOwnership(this.mouseCoords[0], this.mouseCoords[1], this.#sortCache, true);
+        this.emit('move', ...this.#mouseCoords);
         if (
             (
                 this.hovered && this.hovered instanceof Element &&
