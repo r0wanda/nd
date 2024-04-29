@@ -25,7 +25,7 @@ export default class Line extends Element {
         super(opts);
         this.type = 'line';
         console.error(`line: ${this.height} full: ${this.screen?.height}`);
-        const horiz = this.isHorizontal(opts.orientation ?? 'v');
+        const horiz = (opts.orientation ?? 'v').search(/horizontal|horiz|h/i) >= 0;
         if (horiz) this.height = 1;
         else this.width = 1;
         this.opts.ch = horiz ? bd.row : bd.col;

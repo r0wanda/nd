@@ -88,8 +88,7 @@ export default class Mat {
      * @returns The processed mat
      */
     preProcessRet(fn: (m: Mat, ...args: any[]) => Mat, ...args: any[]) {
-        const mat = this.dupe();
-        return fn(mat, ...args);
+        return fn(this.dupe(), ...args);
     }
     /**
      * Apply a processing function to the current mat
@@ -97,7 +96,7 @@ export default class Mat {
      * @param args Any args to pass to the function
      */
     preProcess(fn: (m: Mat, ...args: any[]) => Mat, ...args: any[]) {
-        Object.assign(this, this.preProcessRet(fn, ...args));
+        Object.assign(this, fn(this.dupe(), ...args));
     }
     /**
      * Indiscriminately process pixels from a copy of the current mat

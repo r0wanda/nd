@@ -785,7 +785,7 @@ export default class Screen extends Node {
      */
     pixelOwnership(x: number, y: number, chs: Element[], sorted = false): Element | undefined {
         if (!sorted) chs = this.completeSort(chs);
-        return chs.find(e => e.withinBounds(x, y))
+        return chs.find(e => e._withinBounds(x, y))
     }
     /**
      * Lookup the BorderRegistry for the BorderWants of a border character
@@ -814,14 +814,14 @@ export default class Screen extends Node {
                 if (err) throw new RangeError(`isOnEdge: Coordinates (${x},${y}) out of range`);
                 return false;
             }
-            return !!this.pixelOwnership(x, y, chs, true)?.isOnEdge(x, y);
+            return !!this.pixelOwnership(x, y, chs, true)?._isOnEdge(x, y);
         }
         for (let y = 0; y < m.y; y++) {
             for (let x = 0; x < m.x; x++) {
                 const c = m.m[y][x];
                 // continue if invalid for docking
                 const owner = this.pixelOwnership(x, y, chs);
-                if (c.search(boxRe) < 0 || !owner?.isOnEdge(x, y) || !owner?.opts.dock) continue;
+                if (c.search(boxRe) < 0 || !owner?._isOnEdge(x, y) || !owner?.opts.dock) continue;
                 // ~~yikes part starts~~
                 // gets characters to the left or right, undefined if out of range (eg. (-1, -1))
                 // variable name: t: top, b: bottom, etc

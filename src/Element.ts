@@ -462,8 +462,8 @@ export interface Tag {
 //const _Node: new <E extends ListenerSignature<E> = ListenerSignature<unknown>>() => Omit<Node, 'parent' | 'children'> = Node;
 
 export default interface Element {
-    genContent(ret: true, color?: Color): Mat;
-    genContent(ret: false, color?: Color): undefined;
+    _genContent(ret: true, color?: Color): Mat;
+    _genContent(ret: false, color?: Color): undefined;
 }
 
 /**
@@ -503,7 +503,7 @@ export default class Element extends Node {
     }
     set content(val: string) {
         this._content = this.opts.stripAnsi ? stripAnsi(val) : val;
-        this.genContent();
+        this._genContent();
     }
     get contentLen(): number {
         return length(this.content);
@@ -524,43 +524,43 @@ export default class Element extends Node {
         return this._left;
     }
     set left(left: Keyword) {
-        this.calcPos({ left });
+        this._calcPos({ left });
     }
     get right(): number {
         return this._right;
     }
     set right(right: Keyword) {
-        this.calcPos({ right });
+        this._calcPos({ right });
     }
     get top(): number {
         return this._top;
     }
     set top(top: Keyword) {
-        this.calcPos({ top });
+        this._calcPos({ top });
     }
     get bottom(): number {
         return this._bottom;
     }
     set bottom(bottom: Keyword) {
-        this.calcPos({ bottom });
+        this._calcPos({ bottom });
     }
     get width(): number {
         return this._width;
     }
     set width(width: Keyword) {
-        this.calcPos({ width });
+        this._calcPos({ width });
     }
     get height(): number {
         return this._height;
     }
     set height(height: Keyword) {
-        this.calcPos({ height });
+        this._calcPos({ height });
     }
     get padding(): Required<Padding> {
         return this._padding;
     }
     set padding(p: Padding) {
-        this._padding = this.constructPadding(p);
+        this._padding = this._constructPadding(p);
     }
     // raw attributes
     _left: number;
@@ -584,9 +584,13 @@ export default class Element extends Node {
     index: number;
     contentMat: Mat;
     renderMat?: Mat;
-    readonly nPer: Percentage;
+    static nPer = {
+        percent: -1,
+        offset: 0
+    }
     wport: number;
     hport: number;
+    #preProcessStack: ((m: Mat, ...args: any[]) => void)[];
     constructor(opts: ElementOptions) {
         super();
         this.type = 'element';
@@ -594,16 +598,13 @@ export default class Element extends Node {
         this.options = opts;
         this.parent = opts.parent instanceof Element ? opts.parent : undefined;
         this.on('resize', () => {
-            this.calcPos();
+            this._calcPos();
         });
         if (opts.screen instanceof Screen) this.index = this.setScreen(opts.screen);
         else if (this.parent?.screen instanceof Screen) this.index = this.setScreen(this.parent.screen);
         else throw new Error('No screen');
         this.children = opts.children && Array.isArray(opts.children) && opts.children.length > 0 ? opts.children : [];
-        this.nPer = {
-            percent: -1,
-            offset: 0
-        }
+        this.#preProcessStack = [];
         this.opts = {
             bold: opts.bold ?? false,
             underline: opts.underline ?? false,
@@ -648,14 +649,14 @@ export default class Element extends Node {
         // defaults to make typescript happy
         this._width = this._height =
             this._left = this._right = this._top = this._bottom =
-            this.aleft = this.aright = this.atop = this.abottom = 
+            this.aleft = this.aright = this.atop = this.abottom =
             this.wport = this.hport = 0;
         // actually set position
-        this.calcPos({
+        this._calcPos({
             regenContent: false
         });
         // padding
-        this._padding = this.constructPadding(opts.padding);
+        this._padding = this._constructPadding(opts.padding);
         // content (and ts defaults)
         this._content = '';
         this.scrollPos = 0;
@@ -665,13 +666,13 @@ export default class Element extends Node {
         this.on('scrollup', () => {
             console.error('scrlup')
             if (this.scrollPos > 0) this.scrollPos--;
-            this.genContent();
+            this._genContent();
             this.screen?.render();
         });
         this.on('scrolldown', () => {
             console.error('scrldown');
             if (this.scrollPos + this.hport + 1 <= this.contentHeight) this.scrollPos++;
-            this.genContent();
+            this._genContent();
             this.screen?.render();
         });
     }
@@ -683,14 +684,11 @@ export default class Element extends Node {
     setContent(val: string, strip = this.opts.stripAnsi) {
         this.content = strip ? stripAnsi(val) : val;
     }
-    isHorizontal(o: Orientation) {
-        return o.search(/horizontal|horiz|h/i) >= 0;
-    }
     /**
      * Calculate position
      * @internal
      */
-    calcPos(opts?: {
+    _calcPos(opts?: {
         width?: Keyword;
         height?: Keyword;
         left?: Keyword;
@@ -709,19 +707,19 @@ export default class Element extends Node {
         if ((this.opts.left === 'calc' && this.opts.right === 'calc') || (this.opts.top === 'calc' && this.opts.bottom === 'calc'))
             throw new Error('No 2 opposite position arguments (left/right, top/bottom) can both be calculated.');
         // width/height must be defined first
-        this._width = this.parseKeywordWH(this.opts.width, 'w');
-        this._height = this.parseKeywordWH(this.opts.height, 'h');
+        this._width = this._parseKeywordWH(this.opts.width, 'w');
+        this._height = this._parseKeywordWH(this.opts.height, 'h');
         if (this.screen && this.opts.resize && this.width + this.aleft > this.screen.width) this.width = this.screen.width - this.aleft;
         if (this.screen && this.opts.resize && this.height + this.atop > this.screen.height) this.height = this.screen.height - this.atop;
         // then margins
-        this._left = this.parseKeywordMargin(this.opts.left, 'left');
-        this._right = this.parseKeywordMargin(this.opts.right, 'right');
-        this._top = this.parseKeywordMargin(this.opts.top, 'top');
-        this._bottom = this.parseKeywordMargin(this.opts.bottom, 'bottom');
-        this.aleft = this.parseKeywordMargin(this.opts.left, 'left', this.screen);
-        this.aright = this.parseKeywordMargin(this.opts.right, 'right', this.screen);
-        this.atop = this.parseKeywordMargin(this.opts.top, 'top', this.screen);
-        this.abottom = this.parseKeywordMargin(this.opts.bottom, 'bottom', this.screen);
+        this._left = this._parseKeywordMargin(this.opts.left, 'left');
+        this._right = this._parseKeywordMargin(this.opts.right, 'right');
+        this._top = this._parseKeywordMargin(this.opts.top, 'top');
+        this._bottom = this._parseKeywordMargin(this.opts.bottom, 'bottom');
+        this.aleft = this._parseKeywordMargin(this.opts.left, 'left', this.screen);
+        this.aright = this._parseKeywordMargin(this.opts.right, 'right', this.screen);
+        this.atop = this._parseKeywordMargin(this.opts.top, 'top', this.screen);
+        this.abottom = this._parseKeywordMargin(this.opts.bottom, 'bottom', this.screen);
         // regen contentmat by calling setter
         if (opts?.regenContent ?? true) this.setContent(this.content);
     }
@@ -730,7 +728,7 @@ export default class Element extends Node {
      * @param p A partial Padding object
      * @returns A complete Padding object
      */
-    constructPadding(p: ElementOptions['padding']): Required<Padding> {
+    _constructPadding(p: ElementOptions['padding']): Required<Padding> {
         let l, r, t, b;
         l = r = t = b = 0;
         if (typeof p === 'object') {
@@ -771,7 +769,7 @@ export default class Element extends Node {
      * @param y 
      * @returns The result
      */
-    withinBounds(x: number, y: number): boolean {
+    _withinBounds(x: number, y: number): boolean {
         return x >= this.aleft && x < this.aleft + this.width && y >= this.atop && y < this.atop + this.height;
     }
     /**
@@ -780,55 +778,15 @@ export default class Element extends Node {
      * @param y 
      * @returns The result
      */
-    isOnEdge(x: number, y: number): boolean {
+    _isOnEdge(x: number, y: number): boolean {
         return ((x === this.aleft || x === this.aleft + this.width - 1) && y >= this.atop && y <= this.aleft + this.width) ||
-               ((y === this.atop || y === this.atop + this.height - 1) && x >= this.aleft && x <= this.aleft + this.width);
-    }
-    /**
-     * Is keyword a percentage (50%, 25%+1, 70%-1, etc...)
-     * @internal
-     */
-    isPercentage(k: Keyword): k is string { //
-        return k ? typeof k === 'number' ? false : !isNaN(Number(k.replace('%', '').replace(/[+-]/, ''))) : false;
-    }
-    /**
-     * Is percentage nPer (iNvalid Percentage)
-     * @internal
-     * @param p The percentage to check
-     */
-    isNPer(p: Percentage): boolean {
-        return p.percent < 0;
-    }
-    /**
-     * Check if string is 'w' or 'h'
-     * @internal
-     * @param wh The string to check
-     */
-    isWh(wh: string): wh is 'w' | 'h' {
-        return ['w', 'h'].includes(wh);
-    }
-    /**
-     * Check if string is 'top', 'bottom', 'left, or 'right'
-     * @internal
-     * @param tblr The string to check
-     */
-    isTblr(tblr: string): tblr is Tblr {
-        return ['top', 'bottom', 'left', 'right'].includes(tblr);
-    }
-    /**
-     * Convert a string from w or h to width or height
-     * @internal
-     * @param wh The string to convert
-     * @returns 
-     */
-    wh(wh: 'w' | 'h' = 'w'): 'width' | 'height' {
-        return wh === 'w' ? 'width' : 'height';
+            ((y === this.atop || y === this.atop + this.height - 1) && x >= this.aleft && x <= this.aleft + this.width);
     }
     /**
      * Round a number according to options. Will consistently either round up or down.
      * @internal
      */
-    round(n: number): number {
+    _round(n: number): number {
         return Math[this.opts.floor ? 'floor' : 'ceil'](n);
     }
     /**
@@ -848,7 +806,7 @@ export default class Element extends Node {
         if (!this.screen) throw new Error('Cannot register key without a screen');
         this.screen.key(key, cb, opts);
     }
-    mergeStyle(): StyleReq {
+    _mergeStyle(): StyleReq {
         const m = <Style>merge.all([
             this.style,
             (this.focused && this.style.focus ? this.style.focus : {}),
@@ -869,7 +827,7 @@ export default class Element extends Node {
      * @param s The string
      * @returns An array of tag objects
      */
-    parseTags(s: string): Tag[] {
+    _parseTags(s: string): Tag[] {
         if (!this.opts.tags) {
             const tags = [];
             // see: https://en.wikipedia.org/wiki/Newline#Representation
@@ -962,82 +920,18 @@ export default class Element extends Node {
     static isBorderKey(k: string): k is keyof Border_t {
         return ['row', 'col', 'tl', 'tr', 'bl', 'br'].includes(k);
     }
-    genBorder(m: Mat, color = this.screen?.color) {
-        const style = this.mergeStyle();
-        if (m.x < 1 || m.y < 1) return m;
-        if (!style.border || !color) return m;
-        const lType = style.border.lineType;
-        let bd: Border_t;
-        if (style.border.type === 'bg') {
-            bd = BorderBg;
-        } else if (Element.isBorderT(lType)) {
-            bd = lType;
-        } else {
-            switch (typeof lType === 'string' ? lType : 'single') {
-                case 'arc': bd = BorderArc; break;
-                case 'double': bd = BorderDouble; break;
-                case 'dash': bd = BorderDash; break;
-                case 'heavy': bd = BorderHeavy; break;
-                case 'heavydash': bd = BorderHeavyDash; break;
-                default: bd = Border;
-            }
-        }
-        const bg = color.parse(style.border.bg || 'default');
-        const fg = color.parse(style.border.fg || 'default');
-        const f = (c: string) => `${bg}${fg}${c}\x1b[0m`;
-        if (m.x === 1 && m.y === 1) {
-            if (this.isHorizontal(style.border.orientation ?? 'v')) m.xy(0, 0, bd.row);
-            else m.xy(0, 0, bd.col);
-        } else if (m.x === 1) m.blk(0, 0, 1, m.y, f(bd.col));
-        else if (m.y === 1) m.blk(0, 0, m.x, 1, f(bd.row));
-        else {
-            m.blk(0, 0, m.x, 1, f(bd.row));
-            m.blk(0, 0, 1, m.y, f(bd.col));
-            m.blk(0, m.y - 1, m.x, 1, f(bd.row));
-            m.blk(m.x - 1, 0, 1, m.y, f(bd.col));
-            m.xy(0, 0, f(bd.tl)); m.xy(m.x - 1, 0, f(bd.tr));
-            m.xy(0, m.y - 1, f(bd.bl)); m.xy(m.x - 1, m.y - 1, f(bd.br));
-        }
-        return m;
-    }
-    shiftColor(c?: Color_t, amount?: number, def: tc.ColorInput = 'black'): tc.Instance {
-        const col = tc((c || '').toString());
-        if (!c || c === 'default' || !col.isValid()) return tc(def);
-        if (col.isDark()) return col.lighten(amount);
-        return col.darken(amount);
-    }
-    genScroll(m: Mat, color: Color) {
-        const style = this.mergeStyle();
-        m.pushColumn();
-        // color choice
-        const bg = `${color.parse(style.scrollbar?.bg || this.shiftColor(style.bg), true)}${this.opts.ch}\x1b[0m`;
-        let fg;
-        if (style.scrollbar?.fg) fg = `${color.parse(style.scrollbar.fg)}`;
-        else fg = `${color.parse(style.scrollbar?.fg || this.shiftColor(style.bg))}${this.opts.ch}\x1b[0m`;
-        console.error([fg, bg]);
-        // calc
-        let nP = Math.floor(this.scrollPos / this.contentHeight * m.y);
-        const nY = Math.ceil(m.y / this.contentHeight * m.y);
-        if (nP + nY === m.y && this.scrollPos + m.y !== this.contentHeight) nP--;
-        if (nP === 0 && this.scrollPos !== 0) nP++;
-        // render
-        m.blk(m.x - 1, 0, 1, nP, bg);
-        m.blk(m.x - 1, nP, 1, nY, fg);
-        m.blk(m.x - 1, nP + nY, 1, m.y - nP - nY, bg);
-        return m;
-    }
     /**
      * Generate a Mat from the content
      * @internal
      */
-    genContent(ret = false, color = this.screen?.color) {
-        const style = this.mergeStyle();
+    _genContent(ret = false, color = this.screen?.color) {
+        const style = this._mergeStyle();
         // main mat
         const mat = new Mat(this.width, this.height, '');
         if (!color) return;
 
         // render
-        const tags = this.parseTags(this.content);
+        const tags = this._parseTags(this.content);
         // set padding (nice for implementing border and scrollbar)
         // math.max will choose specified padding if it is both defined and bigger than 1, else it will default to 1
         // if no border exists, border padding will be 0 (hence it not existing)
@@ -1065,7 +959,7 @@ export default class Element extends Node {
         switch (this.opts.valign) {
             case 'center':
             case 'middle':
-                t = this.round(c.y / 2 - this.contentHeight / 2);
+                t = this._round(c.y / 2 - this.contentHeight / 2);
                 break;
             case 'bottom':
                 t = c.y - this.contentHeight;
@@ -1078,7 +972,7 @@ export default class Element extends Node {
             switch (a) {
                 case 'center':
                 case 'middle':
-                    l = this.round(c.x / 2 - w / 2);
+                    l = this._round(c.x / 2 - w / 2);
                     break;
                 case 'right':
                     l = c.x - w;
@@ -1232,16 +1126,76 @@ export default class Element extends Node {
         }
         //c.yShrink(); // x alignment has already been applied, y is done at overlay
         if (scrlpad) {
-            c.preProcess(this.genScroll.bind(this), color);
+            c.preProcess((m: Mat) => {
+                m.pushColumn();
+                // color choice
+                function shiftColor(c?: Color_t, amount?: number, def: tc.ColorInput = 'black'): tc.Instance {
+                    const col = tc((c || '').toString());
+                    if (!c || c === 'default' || !col.isValid()) return tc(def);
+                    if (col.isDark()) return col.lighten(amount);
+                    return col.darken(amount);
+                }
+                const bg = `${color.parse(style.scrollbar?.bg || shiftColor(style.bg), true)}${this.opts.ch}\x1b[0m`;
+                let fg;
+                if (style.scrollbar?.fg) fg = `${color.parse(style.scrollbar.fg)}`;
+                else fg = `${color.parse(style.scrollbar?.fg || shiftColor(style.bg))}${this.opts.ch}\x1b[0m`;
+                console.error([fg, bg]);
+                // calc
+                let nP = Math.floor(this.scrollPos / this.contentHeight * m.y);
+                const nY = Math.ceil(m.y / this.contentHeight * m.y);
+                if (nP + nY === m.y && this.scrollPos + m.y !== this.contentHeight) nP--;
+                if (nP === 0 && this.scrollPos !== 0) nP++;
+                // render
+                m.blk(m.x - 1, 0, 1, nP, bg);
+                m.blk(m.x - 1, nP, 1, nY, fg);
+                m.blk(m.x - 1, nP + nY, 1, m.y - nP - nY, bg);
+                return m;
+            });
         }
         mat.overlay(lpad, t + tpad, c);
         // apply border
-        mat.preProcess(this.genBorder.bind(this), color);
+        mat.preProcess((m: Mat) => {
+            if (m.x < 1 || m.y < 1) return m;
+            if (!style.border || !color) return m;
+            const lType = style.border.lineType;
+            let bd: Border_t;
+            if (style.border.type === 'bg') {
+                bd = BorderBg;
+            } else if (Element.isBorderT(lType)) {
+                bd = lType;
+            } else {
+                switch (typeof lType === 'string' ? lType : 'single') {
+                    case 'arc': bd = BorderArc; break;
+                    case 'double': bd = BorderDouble; break;
+                    case 'dash': bd = BorderDash; break;
+                    case 'heavy': bd = BorderHeavy; break;
+                    case 'heavydash': bd = BorderHeavyDash; break;
+                    default: bd = Border;
+                }
+            }
+            const bg = color.parse(style.border.bg || 'default');
+            const fg = color.parse(style.border.fg || 'default');
+            const f = (c: string) => `${bg}${fg}${c}\x1b[0m`;
+            if (m.x === 1 && m.y === 1) {
+                if ((style.border.orientation ?? 'v').search(/horizontal|horiz|h/i) >= 0) m.xy(0, 0, bd.row);
+                else m.xy(0, 0, bd.col);
+            } else if (m.x === 1) m.blk(0, 0, 1, m.y, f(bd.col));
+            else if (m.y === 1) m.blk(0, 0, m.x, 1, f(bd.row));
+            else {
+                m.blk(0, 0, m.x, 1, f(bd.row));
+                m.blk(0, 0, 1, m.y, f(bd.col));
+                m.blk(0, m.y - 1, m.x, 1, f(bd.row));
+                m.blk(m.x - 1, 0, 1, m.y, f(bd.col));
+                m.xy(0, 0, f(bd.tl)); m.xy(m.x - 1, 0, f(bd.tr));
+                m.xy(0, m.y - 1, f(bd.bl)); m.xy(m.x - 1, m.y - 1, f(bd.br));
+            }
+            return m;
+        });
         if (ret) return mat;
         else this.contentMat = mat;
     }
     render() {
-        const style = this.mergeStyle();
+        const style = this._mergeStyle();
         if (!this.screen?.color) throw new Error('Render cannot be run if no screen is available');
         const color = this.screen.color;
         let width = this.width;
@@ -1252,7 +1206,7 @@ export default class Element extends Node {
         let contentMat = this.contentMat;
         if (width + this.aleft > this.screen.width) {
             width = this.screen.width - this.aleft;
-            if (this.opts.resize) contentMat = this.genContent.bind({
+            if (this.opts.resize) contentMat = this._genContent.bind({
                 ...this,
                 width,
                 height
@@ -1271,21 +1225,24 @@ export default class Element extends Node {
      * @param k The keyword to grab percentage from
      * @returns The percentage and offset as a Percentage object, or nPer
      */
-    parsePercentage(k: Keyword): Percentage {
-        if (!k || !this.isPercentage(k)) return this.nPer;
+    static parsePercentage(k: Keyword): Percentage {
+        function isPercentage(ky: Keyword): ky is string {
+            return ky ? typeof ky === 'number' ? false : !isNaN(Number(ky.replace('%', '').replace(/[+-]/, ''))) : false;
+        }
+        if (!isPercentage(k)) return Element.nPer;
         const spl = k.replace('%', '').split(/[+-]/);
         if (spl.length === 1 && !isNaN(Number(spl[0]))) {
             return {
                 percent: Number(spl[0]),
                 offset: 0
             }
-        } else if (spl.length !== 2) return this.nPer;
-        else if (!k.match(/[+-]/)) return this.nPer;
+        } else if (spl.length !== 2) return Element.nPer;
+        else if (!k.match(/[+-]/)) return Element.nPer;
         const r: Percentage = {
             percent: Number(spl[0]),
             offset: k.includes('+') ? Number(spl[1]) : -Number(spl[1])
         }
-        if (r.percent < 0 || r.percent > 100) return this.nPer;
+        if (r.percent < 0 || r.percent > 100) return Element.nPer;
         return r;
     }
     /**
@@ -1298,19 +1255,25 @@ export default class Element extends Node {
     calcPercentage(p: Percentage, type: 'w' | 'h' | Tblr, parent?: Element | Screen): number {
         if (!parent) parent = this.parent || this.screen;
         if (!parent) return 0;
-        if (this.isNPer(p)) return 0;
-        return this.isWh(type) ? Math.round(parent[this.wh(type)] / 100 * p.percent + p.offset) : (() => {
+        if (p.percent < 0) return 0;
+        function isWh(wh: string): wh is 'w' | 'h' {
+            return ['w', 'h'].includes(wh)
+        }
+        function wh(wh: 'w' | 'h' = 'w'): 'width' | 'height' {
+            return wh === 'w' ? 'width' : 'height';
+        }
+        return isWh(type) ? Math.round(parent[wh(type)] / 100 * p.percent + p.offset) : (() => {
             switch (type) {
                 case 'top':
                 case 'bottom':
                     if (p.percent === 100) return Math.ceil(parent.height + p.offset);
                     else if (p.percent === 0) return Math.floor(p.offset);
-                    else return this.round(parent.height / 100 * p.percent + p.offset);
+                    else return this._round(parent.height / 100 * p.percent + p.offset);
                 case 'left':
                 case 'right':
                     if (p.percent === 100) return Math.ceil(parent.width + p.offset);
                     else if (p.percent === 0) return Math.floor(p.offset);
-                    return this.round(parent.width / 100 * p.percent + p.offset);
+                    return this._round(parent.width / 100 * p.percent + p.offset);
             }
         })();
     }
@@ -1321,17 +1284,20 @@ export default class Element extends Node {
      * @param parent The reference Node
      * @returns The number of characters
      */
-    parseKeywordWH(k: Keyword, wh: 'w' | 'h' = 'w', parent?: Element | Screen): number {
+    _parseKeywordWH(k: Keyword, wh: 'w' | 'h' = 'w', parent?: Element | Screen): number {
         if (!parent) parent = this.parent || this.screen;
         if (!parent) return 0;
         if (wh !== 'w' && wh !== 'h') return 0;
+        function _wh(wh: 'w' | 'h' = 'w'): 'width' | 'height' {
+            return wh === 'w' ? 'width' : 'height';
+        }
         switch (k) {
             case 'shrink': return this.contentLen;
-            case 'half': return this.round(parent[this.wh(wh)] / 2);
+            case 'half': return this._round(parent[_wh(wh)] / 2);
             default: {
                 const num = Number(k);
                 if (!isNaN(num)) return num;
-                const p = this.parsePercentage(k);
+                const p = Element.parsePercentage(k);
                 return this.calcPercentage(p, wh, parent);
             }
         }
@@ -1343,21 +1309,24 @@ export default class Element extends Node {
      * @param parent The reference Node
      * @returns The number of characters
      */
-    parseKeywordMargin(k: Keyword, tblr: Tblr, parent?: Element | Screen): number {
+    _parseKeywordMargin(k: Keyword, tblr: Tblr, parent?: Element | Screen): number {
         if (!parent) parent = this.parent || this.screen;
         if (!parent) return 0;
-        if (!this.isTblr(tblr)) return 0;
+        function isTblr(tblr: string): tblr is Tblr {
+            return ['top', 'bottom', 'left', 'right'].includes(tblr)
+        }
+        if (!isTblr(tblr)) return 0;
         switch (tblr) {
             case 'left': {
                 switch (k) {
                     case 'left': return 0;
                     case 'right': return parent.width - this.width;
-                    case 'center': return this.round(parent.width / 2 - this.width / 2);
+                    case 'center': return this._round(parent.width / 2 - this.width / 2);
                     case 'calc': return parent.width - (this.width + this.right);
                     default: {
                         const num = Number(k);
                         if (!isNaN(num)) return num;
-                        const p = this.parsePercentage(k);
+                        const p = Element.parsePercentage(k);
                         return this.calcPercentage(p, tblr, parent);
                     }
                 }
@@ -1366,12 +1335,12 @@ export default class Element extends Node {
                 switch (k) {
                     case 'left': return parent.width + this.width;
                     case 'right': return 0;
-                    case 'center': return this.round(parent.width / 2 + this.width / 2);
+                    case 'center': return this._round(parent.width / 2 + this.width / 2);
                     case 'calc': return parent.width - (this.left + this.width);
                     default: {
                         const num = Number(k);
                         if (!isNaN(num)) return num;
-                        const p = this.parsePercentage(k);
+                        const p = Element.parsePercentage(k);
                         return this.calcPercentage(p, tblr, parent);
                     }
                 }
@@ -1380,12 +1349,12 @@ export default class Element extends Node {
                 switch (k) {
                     case 'top': return 0;
                     case 'bottom': return parent.height - this.height;
-                    case 'center': return this.round(parent.height / 2 - this.height / 2);
+                    case 'center': return this._round(parent.height / 2 - this.height / 2);
                     case 'calc': return parent.height - (this.bottom + this.height);
                     default: {
                         const num = Number(k);
                         if (!isNaN(num)) return num;
-                        const p = this.parsePercentage(k);
+                        const p = Element.parsePercentage(k);
                         return this.calcPercentage(p, tblr, parent);
                     }
                 }
@@ -1394,12 +1363,12 @@ export default class Element extends Node {
                 switch (k) {
                     case 'top': return parent.height - this.height;
                     case 'bottom': return 0;
-                    case 'center': return this.round(parent.height / 2 + this.height / 2);
+                    case 'center': return this._round(parent.height / 2 + this.height / 2);
                     case 'calc': return parent.height - (this.top + this.height);
                     default: {
                         const num = Number(k);
                         if (!isNaN(num)) return num;
-                        const p = this.parsePercentage(k);
+                        const p = Element.parsePercentage(k);
                         return this.calcPercentage(p, tblr, parent);
                     }
                 }
@@ -1407,4 +1376,3 @@ export default class Element extends Node {
         }
     }
 }
-
