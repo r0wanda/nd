@@ -70,13 +70,7 @@ export default class Mat {
         mat.m = structuredClone(this.m);
         return mat;
     }
-    /**
-     * Shorthand for Mat.duplicate
-     * @returns A copy of this mat
-     */
-    dupe() {
-        return this.duplicate();
-    }
+    dupe = this.duplicate;
 
     // preprocessing functions
     // note: im not sure if the term preprocess is correct

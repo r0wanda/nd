@@ -466,6 +466,15 @@ export default interface Element {
     _genContent(ret: false, color?: Color): undefined;
 }
 
+export type ArrayEditAdd = 'prepend' | 'prep' | 'unshift' |
+    'append' | 'push' |
+    'insert' |
+    'insertBefore' | 'insertBef' |
+    'insertAfter' | 'insertAft';
+export type ArrayEditDel = 'remove' | 'delete';
+export type ArrayEdit = ArrayEditDel | ArrayEditAdd;
+
+
 /**
  * The base Element class, which all other rendered objects descend from.
  * @abstract
@@ -590,7 +599,7 @@ export default class Element extends Node {
     }
     wport: number;
     hport: number;
-    #preProcessStack: ((m: Mat, ...args: any[]) => void)[];
+    #preProcessStack: ((m: Mat, ...args: any[]) => Mat)[];
     constructor(opts: ElementOptions) {
         super();
         this.type = 'element';
@@ -683,6 +692,86 @@ export default class Element extends Node {
      */
     setContent(val: string, strip = this.opts.stripAnsi) {
         this.content = strip ? stripAnsi(val) : val;
+    }
+    /**
+     * Add a preprocessing function
+     * @param fn The function
+     * @param method The method for array addition (eg. append, prepend, insert...) (same as functions for adding children in Node)
+     * @param idxOrRef The index, if inserting, or the reference function if using insertBefore/after
+     * @param acceptInvalidIndexes Whether or not to accept invalid indexes (eg. for -1, prepends, or for something longer than the array, pushes)
+     */
+    addPreProcess(fn: (m: Mat) => Mat, method: ArrayEditAdd = 'append', idxOrRef?: number | ((m: Mat) => Mat), acceptInvalidIndexes = false) {
+        const ins = (idx: number) => {
+            if (!idx) throw new Error('No index provided');
+            if (idx > this.#preProcessStack.length - 1 && acceptInvalidIndexes) this.#preProcessStack.push(fn);
+            else if (idx < 0 && acceptInvalidIndexes) this.#preProcessStack.unshift(fn);
+            else if (idx < 0 || idx > this.#preProcessStack.length - 1) {
+                throw new Error('Invalid index (inserting child)');
+            } else this.#preProcessStack.splice(idx, 0, fn);
+        }
+        switch (method) {
+            case 'prepend':
+            case 'prep':
+            case 'unshift':
+                this.#preProcessStack.unshift(fn);
+                break;
+            case 'insert':
+                if (typeof idxOrRef !== 'number') throw new TypeError('Using reference function when index is expected, use insertBefore/after instead')
+                ins(idxOrRef);
+                break;
+            case 'insertBefore':
+            case 'insertBef': {
+                if (typeof idxOrRef !== 'function') throw new TypeError('Using index when reference function is expected, use insert instead');
+                const idx = this.#preProcessStack.indexOf(idxOrRef);
+                if (idx < 0) throw new Error('Could not find reference function')
+                ins(idx);
+                break;
+            }
+            case 'insertAfter':
+            case 'insertAft': {
+                if (typeof idxOrRef !== 'function') throw new TypeError('Using index when reference function is expected, use insert instead');
+                const idx = this.#preProcessStack.indexOf(idxOrRef);
+                if (idx < 0) throw new Error('Could not find reference function')
+                ins(idx + 1);
+                break;
+            }
+            default:
+                this.#preProcessStack.push(fn);
+        }
+    }
+    /**
+     * Remove the first instance of a function from the preprocess stack
+     * @param fn The function to remove
+     */
+    removePreProcess(fn: (m: Mat) => Mat) {
+        const idx = this.#preProcessStack.indexOf(fn);
+        if (idx < 0) throw new Error('Could not find function to remove');
+        this.#preProcessStack.splice(idx, 1);
+    }
+    /**
+     * Remove all instances of a function from the preprocess stack
+     * @param fn The function to remove
+     */
+    removeAllPreProcess(fn: (m: Mat) => Mat) {
+        let idx = this.#preProcessStack.indexOf(fn);
+        if (idx < 0) throw new Error('Could not find function to remove');
+        while (idx > 0) {
+            this.#preProcessStack.splice(idx, 1);
+            idx = this.#preProcessStack.indexOf(fn);
+        }
+    }
+    /**
+     * Remove all preprocess funtions
+     */
+    clearPreProcess() {
+        this.#preProcessStack = [];
+    }
+    /**
+     * Get the preprocessing stack
+     * @returns The preprocessing stack
+     */
+    getPreProcess() {
+        return this.#preProcessStack;
     }
     /**
      * Calculate position
@@ -1218,6 +1307,10 @@ export default class Element extends Node {
         //console.error(this.screen.width, this.screen.height);
         cm.blk(0, 0, width, height, `${fg}${bg}${this.opts.ch}\x1b[0m`);
         cm.overlay(0, 0, contentMat);
+        // run preprocessing stack
+        for (const fn of this.#preProcessStack) {
+            cm.preProcess(fn);
+        }
         return cm;
     }
     /**

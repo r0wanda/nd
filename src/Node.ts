@@ -68,6 +68,8 @@ export default class Node extends EventEmitter {
         this.children.unshift(node);
         this.emit('_node', node);
     }
+    prep = this.prepend;
+    unshift = this.prepend;
     /**
      * Append node to the end of children
      * @param node The node to append
@@ -81,14 +83,7 @@ export default class Node extends EventEmitter {
         this.children.push(node);
         this.emit('_node', node);
     }
-    /**
-     * Alias of append
-     * @param node The node to append
-     * @param throwOnInvalid Whether or not to throw on invalid type
-     */
-    push(node: Node, throwOnInvalid = false) {
-        this.append(node, throwOnInvalid);
-    }
+    push = this.append;
     /**
      * Remove node from children
      * @param node The node to remove
@@ -103,18 +98,19 @@ export default class Node extends EventEmitter {
         }
         const i = this.children.indexOf(node);
         if (i < 0) {
-            if (throwOnInvalidNode || throwOnInvalid) throw new Error('Invalid node (removinf child)');
+            if (throwOnInvalidNode || throwOnInvalid) throw new Error('Invalid node (removing child)');
             else return;
         }
         this.children.splice(i, 1);
         this.emit('_node', node);
     }
+    delete = this.remove;
     /**
      * Insert node into children at a specific index
      * @param node The node to insert
      * @param i The index to insert into
      * @param throwOnInvalid Whether or not to throw an error if the index or type is invalid
-     * @param acceptInvalidIndexes Whether or not to accept indexes greater than the length of children
+     * @param acceptInvalidIndexes Whether or not to accept indexes greater (or less than) than the length of children
      * @param throwOnInvaidIndexes Whether or not to throw an error if the index (specifically) is invalid
      */
     insert(node: Node, i: number, throwOnInvalid = false, acceptInvalidIndexes = true, throwOnInvaidIndexes = false, throwOnInvalidType = false): void {
@@ -139,8 +135,11 @@ export default class Node extends EventEmitter {
      * @param throwOnInvaidIndexes Whether or not to throw an error if the index (specifically) is invalid
      */
     insertBefore(node: Node, ref: Node, throwOnInvalid = false, acceptInvalidIndexes = true, throwOnInvaidIndexes = false, throwOnInvalidType = false): void {
-        this.insert(node, this.children.indexOf(ref), throwOnInvalid, acceptInvalidIndexes, throwOnInvaidIndexes, throwOnInvalidType);
+        const idx = this.children.indexOf(ref);
+        if (idx < 0) throw new Error('Could not find reference node (inserting child)');
+        this.insert(node, idx, throwOnInvalid, acceptInvalidIndexes, throwOnInvaidIndexes, throwOnInvalidType);
     }
+    insertBef = this.insertBefore;
     /**
      * Insert node into children after a certain node
      * @param node The node to insert
@@ -150,8 +149,11 @@ export default class Node extends EventEmitter {
      * @param throwOnInvaidIndexes Whether or not to throw an error if the index (specifically) is invalid
      */
     insertAfter(node: Node, ref: Node, throwOnInvalid = false, acceptInvalidIndexes = true, throwOnInvaidIndexes = false, throwOnInvalidType = false): void {
-        this.insert(node, this.children.indexOf(ref) + 1, throwOnInvalid, acceptInvalidIndexes, throwOnInvaidIndexes, throwOnInvalidType);
+        const idx = this.children.indexOf(ref);
+        if (idx < 0) throw new Error('Could not find reference node (inserting child)');
+        this.insert(node, idx + 1, throwOnInvalid, acceptInvalidIndexes, throwOnInvaidIndexes, throwOnInvalidType);
     }
+    insertAft = this.insertAfter;
     /**
      * Remove node from parent, if it exists
      */

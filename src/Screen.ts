@@ -302,7 +302,30 @@ export default class Screen extends Node {
             tl: [], tr: [],
             bl: [], br: []
         }
-        this.#bReg = this.constructBorderRegistry(Border, BorderArc, BorderDash, BorderDouble, BorderHeavy, BorderHeavyDash);
+        const bds = [Border, BorderArc, BorderDash, BorderDouble, BorderHeavy, BorderHeavyDash];
+        function constructBorderWants(bd: Border_t, k: keyof Border_t) {
+            if (!bd.type || bd.type.search(/s|h|d/g) < 0) throw new Error('constructBorderWants: Only provided borders, or borders with a specified type can be used');
+            const t = bd.type, b = t, l = t, r = t;
+            const bs = { ch: bd[k]! }
+            switch (k) {
+                case 'row': return { l, r, ...bs };
+                case 'col': return { t, b, ...bs };
+                case 'tl': return { b, r, ...bs };
+                case 'tr': return { b, l, ...bs };
+                case 'bl': return { t, r, ...bs };
+                case 'br': return { t, l, ...bs };
+                default: throw new Error('constructBorderWants: Only border character keys can be used')
+            }
+        }
+        // clone to avoid editing emptyBReg
+        const br: BorderRegistry = structuredClone(this.emptyBReg);
+        for (const bd of bds) {
+            for (const k in bd) {
+                if (!Element.isBorderKey(k) || k === 'type') continue;
+                br[k].push(constructBorderWants(bd, k));
+            }
+        }
+        this.#bReg = br;
         // note: only use sortcache outside of rendering
 
         this.opts = {
@@ -326,7 +349,7 @@ export default class Screen extends Node {
         process.on('exit', this.exit.bind(this));
 
         // initialize sort cache
-        this.#sortCache = this.completeSort();
+        this.#sortCache = this._completeSort();
 
         // stdout stuff
         this.width = this.opts.stdout.columns;
@@ -345,13 +368,46 @@ export default class Screen extends Node {
             }, this.opts.resizeTimeout);
         });
         this.on('_node', (n: Node) => {
-            this.#sortCache = this.completeSort();
+            this.#sortCache = this._completeSort();
             if (this.children.includes(n)) n.setScreen(this, true);
         });
         this.color = new Color(this.opts.bitDepth);
+
+        // keys
         this.enableInput();
         this.keys = [];
-        this.opts.stdin.on('keypress', this.keyListener.bind(this));
+        this.opts.stdin.on('keypress', (ch: string, key?: Key) => {
+            // if ch is undef, use name, if neither then return :(
+            const c = key?.name || ch;
+            if (!c) return;
+            for (const _m of this.keys) {
+                k: for (const m of _m.val) {
+                    try {
+                        // cant check mods if key is undefined
+                        if ((m.mod.ctrl || m.mod.meta || m.mod.shift) && !key) continue k;
+                        // required mods are on else skip
+                        if ((m.mod.ctrl && !key!.ctrl) || (!m.mod.ctrl && key?.ctrl)) continue k;
+                        if ((m.mod.meta && !key!.meta) || (!m.mod.meta && key?.meta)) continue k;
+                        if ((m.mod.shift && !key!.shift) || (!m.mod.shift && key?.shift)) continue k;
+                        let mtch = false;
+                        if (m.glob && typeof m.ch === 'string') mtch = minimatch(c, m.ch);
+                        else if (Screen.isRegex(m.ch)) mtch = c.search(m.ch) >= 0;
+                        else if (typeof m.ch === 'string') mtch = m.ch === c;
+                        if (mtch) {
+                            if (_m.elem) {
+                                if (_m.hover && this.hovered === _m.elem) _m.cb(ch, key);
+                                else if (this.focused === _m.elem) _m.cb(ch, key);
+                            } else _m.cb(ch, key);
+                            break k;
+                        }
+                    } catch (err) {
+                        // TODO: handle error
+                    }
+                }
+            }
+        });
+
+        // mouse
         this.opts.stdin.on('click', (x: number, y: number) => {
             this.mouseCoords = [x, y];
             const elem = this.pixelOwnership(x, y, this.#sortCache, true);
@@ -404,74 +460,6 @@ export default class Screen extends Node {
             this.emit('forward');
         });
     }
-    keyListener(ch: string, key: Key | undefined) {
-        // if ch is undef, use name, if neither then return :(
-        const c = key?.name || ch;
-        if (!c) return;
-        for (const _m of this.keys) {
-            k: for (const m of _m.val) {
-                try {
-                    // cant check mods if key is undefined
-                    if ((m.mod.ctrl || m.mod.meta || m.mod.shift) && !key) continue k;
-                    // required mods are on else skip
-                    if ((m.mod.ctrl && !key!.ctrl) || (!m.mod.ctrl && key?.ctrl)) continue k;
-                    if ((m.mod.meta && !key!.meta) || (!m.mod.meta && key?.meta)) continue k;
-                    if ((m.mod.shift && !key!.shift) || (!m.mod.shift && key?.shift)) continue k;
-                    let mtch = false;
-                    if (m.glob && typeof m.ch === 'string') mtch = minimatch(c, m.ch);
-                    else if (this.isRegex(m.ch)) mtch = c.search(m.ch) >= 0;
-                    else if (typeof m.ch === 'string') mtch = m.ch === c;
-                    if (mtch) {
-                        if (_m.elem) {
-                            if (_m.hover && this.hovered === _m.elem) _m.cb(ch, key);
-                            else if (this.focused === _m.elem) _m.cb(ch, key);
-                        } else _m.cb(ch, key);
-                        break k;
-                    }
-                } catch (err) {
-                    // TODO: handle error
-                }
-            }
-        }
-    }
-    /**
-     * Generate BorderWants from a Border_t, and the corresponding key
-     * @internal
-     * @param bd The Border_t
-     * @param key The key
-     * @returns The constructed BorderWants
-     */
-    constructBorderWants(bd: Border_t, key: keyof Border_t): BorderWants {
-        if (!bd.type || bd.type.search(/s|h|d/g) < 0) throw new Error('constructBorderWants: Only provided borders, or borders with a specified type can be used');
-        const t = bd.type, b = t, l = t, r = t;
-        const bs = { ch: bd[key]! }
-        switch (key) {
-            case 'row': return { l, r, ...bs };
-            case 'col': return { t, b, ...bs };
-            case 'tl': return { b, r, ...bs };
-            case 'tr': return { b, l, ...bs };
-            case 'bl': return { t, r, ...bs };
-            case 'br': return { t, l, ...bs };
-            default: throw new Error('constructBorderWants: Only border character keys can be used')
-        }
-    }
-    /**
-     * Generate BorderRegistry from Border_t(s)
-     * @internal
-     * @param bds The Border_t(s)
-     * @returns The BorderRegistry
-     */
-    constructBorderRegistry(...bds: Border_t[]): BorderRegistry {
-        // clone to avoid editing emptyBReg
-        const br: BorderRegistry = structuredClone(this.emptyBReg);
-        for (const bd of bds) {
-            for (const k in bd) {
-                if (!Element.isBorderKey(k) || k === 'type') continue;
-                br[k].push(this.constructBorderWants(bd, k));
-            }
-        }
-        return br;
-    }
     /**
      * Append Border_t(s) to the BorderRegistry
      * @param bds The Border_t(s)
@@ -506,12 +494,11 @@ export default class Screen extends Node {
      * Test if a value is a RegExp
      * @param r The value to test
      */
-    isRegex(r: any): r is RegExp {
+    static isRegex(r: any): r is RegExp {
         return Object.prototype.toString.call(r) === '[object RegExp]';
     }
     /**
      * Exit the screen
-     * @param proc Whether or not to call process.exit. Default false
      */
     exit(): void {
         if (this.opts.hideCursor) this.write(Ansi.cur.show);
@@ -540,7 +527,7 @@ export default class Screen extends Node {
      * @internal
      * @param k The key to parse
      */
-    parseShorthand(k: string, glob = true): Shorthand {
+    _parseShorthand(k: string, glob = true): Shorthand {
         const p = k.split('-').filter(i => i.length > 0);
         let ch = '';
         let ctrl = false;
@@ -575,7 +562,7 @@ export default class Screen extends Node {
      * @param exp Expected
      * @returns Result
      */
-    deepEq(act: unknown, exp: unknown, strict = true): boolean {
+    static deepEq(act: unknown, exp: unknown, strict = true): boolean {
         try {
             assert[`deep${strict ? 'Strict' : ''}Equal`](act, exp);
             return true;
@@ -585,13 +572,14 @@ export default class Screen extends Node {
     }
     /**
      * Check if a string, RegEx, or Shorthand is compatible with a Shorthand object
+     * @internal
      * @param k1 The input
      * @param k2 The Shorthand to check
      * @param opts 
      * @returns 
      */
-    eqShorthand(k1: string | RegExp | Shorthand, k2: Shorthand, opts?: KeyOptions): boolean {
-        if (typeof k1 !== 'string' && !this.isRegex(k1)) k1 = k1.raw; // elim shorthand
+    _eqShorthand(k1: string | RegExp | Shorthand, k2: Shorthand, opts?: KeyOptions): boolean {
+        if (typeof k1 !== 'string' && !Screen.isRegex(k1)) k1 = k1.raw; // elim shorthand
         const genSh = (k: string | RegExp) => {
             const p: Shorthand = {
                 mod: {
@@ -604,13 +592,13 @@ export default class Screen extends Node {
                 glob: opts?.glob ?? true
             }
             if (opts?.shorthand && typeof k === 'string') {
-                Object.assign(p, this.parseShorthand(k));
+                Object.assign(p, this._parseShorthand(k));
             }
             return p;
         }
         return (k1 === k2.raw) ||
-        (this.isRegex(k1) && this.isRegex(k2.ch) && (k1.toString() === k2.ch.toString())) ||
-        this.deepEq(genSh(k1), k2);
+            (Screen.isRegex(k1) && Screen.isRegex(k2.ch) && (k1.toString() === k2.ch.toString())) ||
+            Screen.deepEq(genSh(k1), k2);
     }
     /**
      * Turn a value or array into an array
@@ -618,7 +606,7 @@ export default class Screen extends Node {
      * @param v The value/array
      * @param noDup No duplicates (default true)
      */
-    toArr(v: any | any[], noDup = true): toArrOutput<typeof v> {
+    static toArr(v: any | any[], noDup = true): toArrOutput<typeof v> {
         return noDup ? [...new Set(v)] : [...v];
     }
     /**
@@ -629,7 +617,7 @@ export default class Screen extends Node {
      */
     key(key: (string | RegExp)[] | string | RegExp, cb: (ch: string, key: Key | undefined) => void, opts?: KeyOptions): void {
         if (!this.keyReady) this.enableInput();
-        const _k: toArrOutput<typeof key> = this.toArr(key);
+        const _k: toArrOutput<typeof key> = Screen.toArr(key);
         this.keys.push({
             val: _k.map(k => {
                 const res: Shorthand = {
@@ -643,7 +631,7 @@ export default class Screen extends Node {
                     glob: opts?.glob ?? true
                 }
                 if ((opts?.shorthand ?? true) && typeof k === 'string') {
-                    Object.assign(res, this.parseShorthand(k));
+                    Object.assign(res, this._parseShorthand(k));
                 }
                 return res;
             }),
@@ -661,7 +649,7 @@ export default class Screen extends Node {
             if (typeof key === 'function') {
                 if (k.cb === key) return null;
             } else {
-                k.val = k.val.filter(v => (<toArrOutput<typeof key>>this.toArr(key)).some(_k => this.eqShorthand(_k, v, )));
+                k.val = k.val.filter(v => (<toArrOutput<typeof key>>Screen.toArr(key)).some(_k => this._eqShorthand(_k, v,)));
                 return k;
             }
         }).filter(k => !!k);
@@ -674,7 +662,7 @@ export default class Screen extends Node {
         this.keys = <KeyMatch[]>this.keys.map(k => {
             if (typeof key === 'function') {
                 if (k.cb === key) return null;
-            } else if (k.val.some(v => (<toArrOutput<typeof key>>this.toArr(key)).some(_k => this.eqShorthand(_k, v, )))) {
+            } else if (k.val.some(v => (<toArrOutput<typeof key>>Screen.toArr(key)).some(_k => this._eqShorthand(_k, v,)))) {
                 return null;
             } else {
                 return k;
@@ -694,7 +682,7 @@ export default class Screen extends Node {
      * @param opts 
      * @returns 
      */
-    waitForKey(keys: (string | RegExp)[] | string | RegExp, timeout = (1000 * 60 * 10), opts?: KeyOptions): Promise<WaitForKey> {
+    waitForKey(keys: (string | RegExp)[] | string | RegExp, timeout = 6e5, opts?: KeyOptions): Promise<WaitForKey> {
         return new Promise<WaitForKey>((r, j) => {
             const listen = (ch: string, key: Key | undefined) => {
                 this.removeKey(listen);
@@ -703,7 +691,7 @@ export default class Screen extends Node {
             this.key(keys, listen, opts);
             if (timeout > 0) setTimeout(() => {
                 // eslint-disable-next-line no-empty
-                try { this.removeKey(listen); } catch {}
+                try { this.removeKey(listen); } catch { }
                 j(new Error('Timeout exceeded waiting for key'));
             }, timeout);
         })
@@ -714,7 +702,7 @@ export default class Screen extends Node {
      * Clear out duplicate Element indexes
      * @internal
      */
-    clearDuplicates(recur = 0): Element[] {
+    _clearDuplicates(recur = 0): Element[] {
         const i: number[] = [];
         for (const ch of this.pruneNodes()) {
             if (i.includes(ch.index)) {
@@ -726,7 +714,7 @@ export default class Screen extends Node {
             i.push(ch.index);
         }
         if (recur > this.opts.maxSortRecursion) throw new Error('Too much recursion, could not sort indexes')
-        return i.length !== [...new Set(i)].length ? this.clearDuplicates(recur) : this.pruneNodes();
+        return i.length !== [...new Set(i)].length ? this._clearDuplicates(recur) : this.pruneNodes();
     }
     /**
      * Completely sort Elements, clearing duplicate indexes
@@ -734,8 +722,8 @@ export default class Screen extends Node {
      * @param chs An array of elements to sort, assuming that duplicates have been cleared (will not be done automatically if this is supplied)
      * @returns A sorted array of elements
      */
-    completeSort(chs?: Element[]): Element[] {
-        return (chs ?? this.clearDuplicates()).toSorted((a, b) => {
+    _completeSort(chs?: Element[]): Element[] {
+        return (chs ?? this._clearDuplicates()).toSorted((a, b) => {
             if (a.index === b.index) throw new Error('Indexes must not be equal');
             return a.index > b.index ? -1 : 1;
         });
@@ -784,7 +772,7 @@ export default class Screen extends Node {
      * @returns The element with ownership, or undefined if pixel is unclaimed
      */
     pixelOwnership(x: number, y: number, chs: Element[], sorted = false): Element | undefined {
-        if (!sorted) chs = this.completeSort(chs);
+        if (!sorted) chs = this._completeSort(chs);
         return chs.find(e => e._withinBounds(x, y))
     }
     /**
@@ -845,7 +833,7 @@ export default class Screen extends Node {
                     ch: wants?.ch || 's'
                 }
                 // if all connections are satisfied, continue
-                if (this.deepEq(has, wants)) continue;
+                if (Screen.deepEq(has, wants)) continue;
                 // generate key of Joints (formatting is Shd clockwise (eg. ssss, shss, sdsd, etc...))
                 // not all joint combinations are possible, see top of Joints.ts
                 const key = `${has?.t ?? ''}${has?.r ?? ''}${has.b ?? ''}${has.l ?? ''}`;
@@ -868,7 +856,7 @@ export default class Screen extends Node {
     render() {
         this.emitDescendants('prerender');
         const m = new Mat(this.width, this.height);
-        const chs = this.completeSort().toReversed();
+        const chs = this._completeSort().toReversed();
         for (const ch of chs) {
             if (!(ch instanceof Element)) continue;
             m.overlay(ch.aleft, ch.atop, ch.render());
