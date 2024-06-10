@@ -1,4 +1,5 @@
-# ND: New Design
+![ESLint](https://github.com/r0wanda/nd/actions/workflows/eslint.yml/badge.svg)
+# ND
 
 **New Design** aims to replace [blessed](https://github.com/chjj/blessed) with a maintained, **new**, Typescript-based program. It tries to stay close to the blessed api, to avoid the need to change too much user-code.
 
