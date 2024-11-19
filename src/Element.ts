@@ -1052,7 +1052,7 @@ export default class Element extends Node {
         if (!this.opts.tags) {
             const tags = [];
             // see: https://en.wikipedia.org/wiki/Newline#Representation
-            const t = s.split(/[\n\r]/);
+            const t = s.split(/\r\n|\n/);
             for (let i = 0; i < t.length; i++) {
                 tags.push({
                     type: 'content',
