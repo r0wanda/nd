@@ -5,6 +5,9 @@
 
 TODO: add gif
 
+# Documentation
+
+
 # Install
 Npm:
 ```sh
@@ -32,7 +35,6 @@ const box = new nd.Element({
     width: '50%',
     height: '50%',
     content: 'Hello {bold}world{/bold}!',
-    tags: true, // Not required, tags is default now
     border: {
         type: 'line'
     },
@@ -55,3 +57,12 @@ screen.key(['esc*', 'q', 'C-c'], (ch, key) => {
 
 screen.render();
 ```
+
+## Goals
+- Implement almost all parts of the blessed api (not including redundant/useless features)
+- Implement all or most of blessed-contrib
+- Have benchmark times at or below blessed
+- Have a minimal amount of dependencies
+
+## Related projects
+https://github.com/r0wanda/nd-docs

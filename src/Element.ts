@@ -3,10 +3,11 @@ import Mat from './Mat.js';
 import Screen, { Ansi } from './Screen.js';
 import Color from './Color.js'
 import tc from 'tinycolor2';
-import length from 'string-length';
+import length from 'string-width';
 import merge from 'deepmerge';
 import { isPlainObject } from './is-plain-object.js';
 import stripAnsi from 'strip-ansi';
+//import assert from 'node:assert/strict'
 
 import type { Shd, KeyOptions } from './Screen.js';
 import type { Key } from './Keys.js';
@@ -174,6 +175,39 @@ export interface Scrollbar {
      */
     underline: boolean;
 }
+export interface Label {
+    /**
+     * The label text
+     */
+    text?: string;
+    /**
+     * The position of the label
+     */
+    side?: 'left' | 'center' | 'middle' | 'right';
+    /**
+     * Alias of side
+     */
+    align?: Label['side'];
+    /**
+     * The color of the label text
+     */
+    color?: Color_t;
+    /**
+     * The padding on either side of the label
+     * Minimum value: 2
+     * @default 2
+     * @example
+     * padding = 1
+     * ┌label───
+     * 
+     * padding = 2
+     * ┌─label──
+     * 
+     * padding = 3
+     * ┌──label─
+     */
+    padding?: number;
+}
 export interface Style {
     /**
      * Element foreground color.
@@ -196,9 +230,13 @@ export interface Style {
      */
     focus?: Omit<Style, 'focus'>;
     /**
-     * Alternnate style on hover
+     * Alternate style on hover
      */
     hover?: Omit<Style, 'hover'>;
+    /**
+     * Default label settings
+     */
+    label?: Omit<Label, 'text'>;
 }
 export interface StyleReq extends Style {
     /**
@@ -423,7 +461,7 @@ export interface ElementOptions {
     tags?: boolean;
     /**
      * Whether or not to resize the element if it overflows off screen. Default true, if false, cropping will still be done on render to prevent icky stuff
-     * @default false
+     * @default true
      */
     resize?: boolean;
     /**
@@ -474,13 +512,34 @@ export type ArrayEditAdd = 'prepend' | 'prep' | 'unshift' |
 export type ArrayEditDel = 'remove' | 'delete';
 export type ArrayEdit = ArrayEditDel | ArrayEditAdd;
 
+export interface Position {
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+    t: number;
+    b: number;
+    l: number;
+    r: number;
+}
+export type UserPosition = {
+    [K in keyof Position]: Keyword
+}
+export interface Size {
+    width: number;
+    height: number;
+}
+export type UserSize = {
+    [K in keyof Size]: Keyword;
+}
+
 
 /**
  * The base Element class, which all other rendered objects descend from.
  * @abstract
  */
 export default class Element extends Node {
-    name: string;
+    name?: string;
     /**
      * Absolute left. READ ONLY! It WILL mess up rendering if modified.
      * @readonly
@@ -514,57 +573,69 @@ export default class Element extends Node {
         this._content = this.opts.stripAnsi ? stripAnsi(val) : val;
         this._genContent();
     }
+
     get contentLen(): number {
         return length(this.content);
     }
+
     get contentWidth(): number {
         return this.content.split('\n').reduce((p, c) => length(c) > p ? length(c) : p, 0);
     }
+
     get contentHeight(): number {
         return (this.content.match(/\n/g)?.length ?? -1) + 1;
     }
+
     get focused(): boolean {
         return this.screen?.focused === this;
     }
+
     get hovered(): boolean {
         return this.screen?.hovered === this;
     }
+
     get left(): number {
         return this._left;
     }
     set left(left: Keyword) {
         this._calcPos({ left });
     }
+
     get right(): number {
         return this._right;
     }
     set right(right: Keyword) {
         this._calcPos({ right });
     }
+
     get top(): number {
         return this._top;
     }
     set top(top: Keyword) {
         this._calcPos({ top });
     }
+
     get bottom(): number {
         return this._bottom;
     }
     set bottom(bottom: Keyword) {
         this._calcPos({ bottom });
     }
+
     get width(): number {
         return this._width;
     }
     set width(width: Keyword) {
         this._calcPos({ width });
     }
+
     get height(): number {
         return this._height;
     }
     set height(height: Keyword) {
         this._calcPos({ height });
     }
+
     get padding(): Required<Padding> {
         return this._padding;
     }
@@ -572,6 +643,7 @@ export default class Element extends Node {
         this._padding = this._constructPadding(p);
     }
     // raw attributes
+    // dont edit these (unless you really want to)
     _left: number;
     _right: number;
     _top: number;
@@ -589,6 +661,10 @@ export default class Element extends Node {
      * Processed and usable options object
      */
     opts: Required<OptionsNoStyle>;
+    /**
+     * Computed styles
+     * @remarks Before editing something here, look for a helper function which could make things easier
+     */
     style: StyleReq;
     index: number;
     contentMat: Mat;
@@ -600,18 +676,23 @@ export default class Element extends Node {
     wport: number;
     hport: number;
     #preProcessStack: ((m: Mat, ...args: any[]) => Mat)[];
+    #resizeListener: () => void;
     constructor(opts: ElementOptions) {
         super();
         this.type = 'element';
-        this.name = '';
         this.options = opts;
         this.parent = opts.parent instanceof Element ? opts.parent : undefined;
-        this.on('resize', () => {
+        this.#resizeListener = function(this: Element) {
             this._calcPos();
+        }.bind(this);
+        this.on('attach', (n: Node) => {
+            if (n instanceof Screen) {
+                if (!n.listeners('resize').includes(this.#resizeListener)) n.on('resize', this.#resizeListener);
+            }
         });
         if (opts.screen instanceof Screen) this.index = this.setScreen(opts.screen);
         else if (this.parent?.screen instanceof Screen) this.index = this.setScreen(this.parent.screen);
-        else throw new Error('No screen');
+        else this.index = -1
         this.children = opts.children && Array.isArray(opts.children) && opts.children.length > 0 ? opts.children : [];
         this.#preProcessStack = [];
         this.opts = {
@@ -638,7 +719,7 @@ export default class Element extends Node {
             shadow: opts.shadow ?? false,
             floor: opts.floor ?? true,
             tags: opts.tags ?? true,
-            resize: opts.resize ?? false,
+            resize: opts.resize ?? true,
             dock: opts.dock ?? true,
             stripAnsi: opts.stripAnsi ?? false
         }
@@ -653,7 +734,8 @@ export default class Element extends Node {
             } : (opts.style?.border || opts.border),
             scrollbar: opts.style?.scrollbar,
             focus: opts.style?.focus,
-            hover: opts.style?.hover
+            hover: opts.style?.hover,
+            label: opts.style?.label
         }
         // defaults to make typescript happy
         this._width = this._height =
@@ -684,6 +766,12 @@ export default class Element extends Node {
             this._genContent();
             this.screen?.render();
         });
+        this.on('resize', () => {
+            this.screen?._reloadHover();
+        });
+        this.on('position', () => {
+            this.screen?._reloadHover();
+        });
     }
     /**
      * Set content (reccomended to just set the "content" property unless using ansi strip)
@@ -692,6 +780,35 @@ export default class Element extends Node {
      */
     setContent(val: string, strip = this.opts.stripAnsi) {
         this.content = strip ? stripAnsi(val) : val;
+    }
+    /**
+     * Set label text and options
+     * @param label The label text and options
+     */
+    setLabel(label: Label): void
+    /**
+     * Set label text
+     * @param text The label text
+     */
+    setLabel(text: string, opts?: Omit<Label, 'text'>): void
+    setLabel(label: string | Label, opts?: Omit<Label, 'text'>): void {
+        if (typeof label === 'string') {
+            this.opts.label = label;
+            if (opts) {
+                this.style.label = opts;
+            }
+        } else if (label.text) {
+            this.opts.label = label.text;
+            this.style.label = {
+                align: label.align,
+                color: label.color,
+                padding: label.padding,
+                side: label.side
+            }
+        } else {
+            this.opts.label = '';
+            this.style.label = {};
+        }
     }
     /**
      * Add a preprocessing function
@@ -796,11 +913,16 @@ export default class Element extends Node {
         if ((this.opts.left === 'calc' && this.opts.right === 'calc') || (this.opts.top === 'calc' && this.opts.bottom === 'calc'))
             throw new Error('No 2 opposite position arguments (left/right, top/bottom) can both be calculated.');
         // width/height must be defined first
+        // cache old values
+        const getWHCache = () => [this._width, this._height];
+        const whCache = getWHCache();
         this._width = this._parseKeywordWH(this.opts.width, 'w');
         this._height = this._parseKeywordWH(this.opts.height, 'h');
         if (this.screen && this.opts.resize && this.width + this.aleft > this.screen.width) this.width = this.screen.width - this.aleft;
         if (this.screen && this.opts.resize && this.height + this.atop > this.screen.height) this.height = this.screen.height - this.atop;
         // then margins
+        const getPosCache = () => [this._left, this._right, this._top, this._bottom, this.aleft, this.aright, this.atop, this.abottom];
+        const posCache = getPosCache();
         this._left = this._parseKeywordMargin(this.opts.left, 'left');
         this._right = this._parseKeywordMargin(this.opts.right, 'right');
         this._top = this._parseKeywordMargin(this.opts.top, 'top');
@@ -809,8 +931,18 @@ export default class Element extends Node {
         this.aright = this._parseKeywordMargin(this.opts.right, 'right', this.screen);
         this.atop = this._parseKeywordMargin(this.opts.top, 'top', this.screen);
         this.abottom = this._parseKeywordMargin(this.opts.bottom, 'bottom', this.screen);
+        const newPos = getPosCache();
+        const newWH = getWHCache();
+        if (!posCache.every((val, i) => newPos[i] === val)) this.emit('position');
+        if (!whCache.every((val, i) => newWH[i] === val)) this.emit('resize');
         // regen contentmat by calling setter
         if (opts?.regenContent ?? true) this.setContent(this.content);
+    }
+    _constructPositon() {
+
+    }
+    _constructSize() {
+
     }
     /**
      * Construct Padding
@@ -977,7 +1109,7 @@ export default class Element extends Node {
                     });
                 }
                 tag = '';
-            } else if (c.search(/[\n\r\036\025]/) >= 0) {
+            } else if (c.search(/(\r\n|\r|\n)/) >= 0) {
                 pushVal();
                 tags.push({
                     type: 'newline',
@@ -1016,7 +1148,7 @@ export default class Element extends Node {
     _genContent(ret = false, color = this.screen?.color) {
         const style = this._mergeStyle();
         // main mat
-        const mat = new Mat(this.width, this.height, '');
+        const m = new Mat(this.width, this.height, '');
         if (!color) return;
 
         // render
@@ -1043,7 +1175,7 @@ export default class Element extends Node {
         const c = new Mat(this.width - wpad, this.height - hpad, '');
         this.wport = c.x;
         this.hport = c.y;
-        // calculate the valign (c hasnt been shrunk yet so values are usable to avoid more math and icky parenthissies)
+        // calculate the valign
         let t = 0;
         switch (this.opts.valign) {
             case 'center':
@@ -1082,62 +1214,51 @@ export default class Element extends Node {
         let ul = this.opts.underline;
         let al = this.opts.align;
         let regen = false;
-        //let finalized = false;
 
-        /**
-         * Content between idx and end, only accounting for content with specified alignment
-         * @param idx index
-         * @param a alignment
-         * @param all any alignment
-         * @returns 
-         */
-        function contentUntil(idx: number, a: typeof al, all = false) {
-            let l = 0;
-            let nope = false;
-            for (let i = idx; i < tags.length; i++) {
-                const t = tags[i];
-                if (t.type === 'newline') break;
-                else if (!all && t.type.search(alignRe) >= 0 && t.type !== a) { // will not include anything not aligned the same way
-                    nope = !t.close; // if it is closing then set nope to true
-                }
-                else if (t.type === 'content' && !nope) l += t.val?.length || 0;
-            }
-            return l;
-        }
-        /**
-         * is seperator coming up in line
-         * @param idx index
-         * @returns 
-         */
-        function upcomingSep(idx: number) {
-            for (let i = ++idx; i < tags.length; i++) {
-                const t = tags[i];
-                if (t.type === 'newline') break;
-                else if (t.type === '|') return true;
-            }
-            return false;
-        }
-        /**
-         * have we passed a seperator
-         * @param idx you get the idea
-         * @returns 
-         */
-        function prevSep(idx: number) {
-            if (idx < 1) return false;
-            for (let i = --idx; i > 0; i--) {
-                const t = tags[i];
-                if (t.type === 'newline') break;
-                else if (t.type === '|') return true;
-            }
-            return false;
-        }
         /**
          * move x to the alignment position
          * @param idx 
          */
         function finalizeAlign(idx: number) {
+            /**
+             * is seperator coming up in line
+             * @param idx index
+             * @returns 
+             */
+            function upcomingSep(idx: number) {
+                for (let i = ++idx; i < tags.length; i++) {
+                    const t = tags[i];
+                    if (t.type === 'newline') break;
+                    else if (t.type === '|') return true;
+                }
+                return false;
+            }
+            /**
+             * have we passed a seperator
+             * @param idx you get the idea
+             * @returns 
+             */
+            function prevSep(idx: number) {
+                if (idx < 1) return false;
+                for (let i = --idx; i > 0; i--) {
+                    const t = tags[i];
+                    if (t.type === 'newline') break;
+                    else if (t.type === '|') return true;
+                }
+                return false;
+            }
             const a = upcomingSep(idx) ? 'left' : (prevSep(idx) ? 'right' : al);
-            x = align(contentUntil(idx, a), a);
+            let l = 0;
+            let nope = false;
+            for (let i = idx; i < tags.length; i++) {
+                const t = tags[i];
+                if (t.type === 'newline') break;
+                else if (t.type.search(alignRe) >= 0 && t.type !== a) { // will not include anything not aligned the same way
+                    nope = !t.close; // if it is closing then set nope to true
+                }
+                else if (t.type === 'content' && !nope) l += t.val?.length || 0;
+            }
+            x = align(l, a);
             //finalized = true;
         }
         /**
@@ -1152,7 +1273,6 @@ export default class Element extends Node {
                 if (at === tgt) break;
                 if (tags[i].type === 'newline') at++;
             }
-            console.error(tags[i]);
             return i;
         }
 
@@ -1179,15 +1299,14 @@ export default class Element extends Node {
                 //console.error({fg: tc(fg), bg, _fg, _bg})
                 // correctly place characters on mat
                 let val = '';
-                l: for (let i = 0; i < t.val.length; i++) {
+                for (let i = 0; i < t.val.length; i++) {
                     if (x > c.x) break;
                     val += t.val.at(i);
-                    if (length(val) >= 1) {
-                        if (x >= c.x || y >= c.y) break l;
-                        c.xy(x, y, `${_bg}${_fg}${_bold}${_ul}${val}\x1b[0m`);
-                        x += length(val);
-                        val = '';
-                    }
+                    if (length(val) < 1) continue;
+                    if (x >= c.x || y >= c.y) break;
+                    c.xy(x, y, `${_bg}${_fg}${_bold}${_ul}${val}\x1b[0m`);
+                    x += length(val);
+                    val = '';
                 }
             } else if (t.type === 'newline') {
                 // reset align, x then increment
@@ -1214,36 +1333,33 @@ export default class Element extends Node {
             if (y > c.y) break;
         }
         //c.yShrink(); // x alignment has already been applied, y is done at overlay
-        if (scrlpad) {
-            c.preProcess((m: Mat) => {
-                m.pushColumn();
-                // color choice
-                function shiftColor(c?: Color_t, amount?: number, def: tc.ColorInput = 'black'): tc.Instance {
-                    const col = tc((c || '').toString());
-                    if (!c || c === 'default' || !col.isValid()) return tc(def);
-                    if (col.isDark()) return col.lighten(amount);
-                    return col.darken(amount);
-                }
-                const bg = `${color.parse(style.scrollbar?.bg || shiftColor(style.bg), true)}${this.opts.ch}\x1b[0m`;
-                let fg;
-                if (style.scrollbar?.fg) fg = `${color.parse(style.scrollbar.fg)}`;
-                else fg = `${color.parse(style.scrollbar?.fg || shiftColor(style.bg))}${this.opts.ch}\x1b[0m`;
-                console.error([fg, bg]);
-                // calc
-                let nP = Math.floor(this.scrollPos / this.contentHeight * m.y);
-                const nY = Math.ceil(m.y / this.contentHeight * m.y);
-                if (nP + nY === m.y && this.scrollPos + m.y !== this.contentHeight) nP--;
-                if (nP === 0 && this.scrollPos !== 0) nP++;
-                // render
-                m.blk(m.x - 1, 0, 1, nP, bg);
-                m.blk(m.x - 1, nP, 1, nY, fg);
-                m.blk(m.x - 1, nP + nY, 1, m.y - nP - nY, bg);
-                return m;
-            });
+        function shiftColor(c?: Color_t, amount?: number, def: tc.ColorInput = 'black'): tc.Instance {
+            const col = tc((c || '').toString());
+            if (!c || c === 'default' || !col.isValid()) return tc(def);
+            if (col.isDark()) return col.lighten(amount);
+            return col.darken(amount);
         }
-        mat.overlay(lpad, t + tpad, c);
+        if (scrlpad) {
+            c.pushColumn();
+            // color choice
+            const bg = `${color.parse(style.scrollbar?.bg || shiftColor(style.bg), true)}${this.opts.ch}\x1b[0m`;
+            let fg;
+            if (style.scrollbar?.fg) fg = `${color.parse(style.scrollbar.fg)}`;
+            else fg = `${color.parse(style.scrollbar?.fg || shiftColor(style.bg))}${this.opts.ch}\x1b[0m`;
+            //console.error([fg, bg]);
+            // calc
+            let nP = Math.floor(this.scrollPos / this.contentHeight * c.y);
+            const nY = Math.ceil(c.y / this.contentHeight * c.y);
+            if (nP + nY === c.y && this.scrollPos + c.y !== this.contentHeight) nP--;
+            if (nP === 0 && this.scrollPos !== 0) nP++;
+            // render
+            c.blk(c.x - 1, 0, 1, nP, bg);
+            c.blk(c.x - 1, nP, 1, nY, fg);
+            c.blk(c.x - 1, nP + nY, 1, c.y - nP - nY, bg);
+        }
+        m.overlay(lpad, t + tpad, c);
         // apply border
-        mat.preProcess((m: Mat) => {
+        {
             if (m.x < 1 || m.y < 1) return m;
             if (!style.border || !color) return m;
             const lType = style.border.lineType;
@@ -1278,10 +1394,46 @@ export default class Element extends Node {
                 m.xy(0, 0, f(bd.tl)); m.xy(m.x - 1, 0, f(bd.tr));
                 m.xy(0, m.y - 1, f(bd.bl)); m.xy(m.x - 1, m.y - 1, f(bd.br));
             }
+        }
+        // apply label
+        if (this.opts.label) {
+            const side = this.style.label?.side || this.style.label?.align || 'left';
+            const text = this.opts.label;
+            const col = this.style.label?.color || 'default';
+            let x = Math.max(this.style.label?.padding || 2, 1);
+
+            // calc offset
+            switch (side) {
+                case 'center':
+                case 'middle':
+                    x = this.calcPercentage({
+                        percent: 50,
+                        offset: - length(text) / 2
+                    }, 'w', this);
+                    break;
+                case 'right':
+                    x = this.width - 2 - length(text);
+                    break;
+            }
+            x = Math.max(2, x) + 1;
+            let val = '';
+            let len = 0;
+            for (const c of text.split('')) {
+                if (x > this.width - 2) break;
+                len += length(c);
+                val += c;
+                if (len < 1) continue;
+                m.xy(x, 0, `${color.parse(col, false)}${color.parse(bg, true)}${val}\x1b[0m`);
+                //console.error(x, `${color.parse(col, false)}${color.parse(bg, true)}${val}\x1b[0m`);
+                x += len;
+                len = 0;
+                val = '';
+            }
             return m;
-        });
-        if (ret) return mat;
-        else this.contentMat = mat;
+        }
+
+        if (ret) return m;
+        else this.contentMat = m;
     }
     render() {
         const style = this._mergeStyle();
@@ -1292,7 +1444,9 @@ export default class Element extends Node {
         //console.error(width + this.aleft, height + this.atop);
         const fg = color.parse(style.fg || 'default', false);
         const bg = color.parse(style.bg || 'default', true);
-        let contentMat = this.contentMat;
+        let contentMat;
+        // TODO: decide what to do on overflow
+        // eg. whether or not to set contentmat to resized version, make duplicate contentmat that's rendered normally?
         if (width + this.aleft > this.screen.width) {
             width = this.screen.width - this.aleft;
             if (this.opts.resize) contentMat = this._genContent.bind({
@@ -1300,6 +1454,10 @@ export default class Element extends Node {
                 width,
                 height
             })(true);
+        }
+        if (!contentMat) {
+            this._genContent();
+            contentMat = this.contentMat;
         }
         if (height + this.atop > this.screen.height) height = this.screen.height - this.atop;
         const cm = new Mat(width, height);
@@ -1339,7 +1497,7 @@ export default class Element extends Node {
         return r;
     }
     /**
-     * Calculate a percentage releative to a Node
+     * Calculate a percentage relative to a Node
      * @param p The percentage
      * @param type The percentage direction
      * @param parent The reference Node
@@ -1397,6 +1555,7 @@ export default class Element extends Node {
     }
     /**
      * Parse a margin to number of characters
+     * @internal
      * @param k The keyword to parse
      * @param tblr The keyword direction
      * @param parent The reference Node

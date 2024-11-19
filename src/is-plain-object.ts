@@ -2,7 +2,7 @@
  * is-plain-object <https://github.com/jonschlinkert/is-plain-object>
  *
  * Copyright (c) 2014-2017, Jon Schlinkert.
- * Converted to ts by r0wanda
+ * Converted to ts by Rowan
  * Released under the MIT License.
  */
 

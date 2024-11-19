@@ -15,7 +15,7 @@ export type fn<T> = (r: T) => void;
  * The base node, which is extended by Element and Screen. Very little functionality, mainly parent, children, and screen.
  * @abstract
  */
-export default class Node extends EventEmitter {
+export default abstract class Node extends EventEmitter {
     screen?: Screen;
     parent?: Node;
     children: Node[];
@@ -54,6 +54,9 @@ export default class Node extends EventEmitter {
         if (!parent && p) this.emit('remove', p);
         else if (parent && p) this.emit('reparent', parent, p);
         else if (parent) this.emit('adopt', parent);
+    }
+    removeParent() {
+        this.setParent();
     }
     /**
      * Prepend node to the beginning of children

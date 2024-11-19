@@ -1,7 +1,7 @@
 {
   "name": "newdesigns",
-  "version": "1.0.0",
-  "description": "New Designs - A working, fully-featured TUI creator",
+  "version": "0.0.1",
+  "description": "ND - A fully-featured TUI library",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
@@ -10,7 +10,8 @@
     "pretest": "tsc && eslint .",
     "test": "node dist/test.js 2> errfile",
     "lint": "eslint .",
-    "docs": "typedoc --out docs src/*.ts"
+    "docs": "typedoc --out docs src/*.ts",
+    "cloc": "cloc . --exclude-dir=node_modules,dist,old"
   },
   "repository": {
     "type": "git",
@@ -28,11 +29,10 @@
   },
   "homepage": "https://github.com/r0wanda/nd#readme",
   "dependencies": {
-    "ansi-escapes": "^6.2.0",
     "deepmerge": "^4.3.1",
     "is-interactive": "^2.0.0",
     "minimatch": "^9.0.3",
-    "string-length": "^6.0.0",
+    "string-width": "^7.1.0",
     "strip-ansi": "^7.1.0",
     "tinycolor2": "^1.6.0"
   },

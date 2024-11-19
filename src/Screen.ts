@@ -64,11 +64,20 @@ export interface ScreenOptions {
      * Manually set stdout
      * @default process.stdout
      */
-    stdout: typeof process.stdout;
+    stdout: NodeJS.WriteStream;
     /**
      * Manually set stdin
+     * @default process.stdin
      */
-    stdin: typeof process.stdin;
+    stdin: NodeJS.ReadStream;
+    /**
+     * Alias of stdin
+     */
+    output?: NodeJS.WriteStream;
+    /**
+     * Alias of stdout
+     */
+    input?: NodeJS.ReadStream;
     /**
      * Whether or not to enter the alternative screen
      * @default true
@@ -76,6 +85,7 @@ export interface ScreenOptions {
     fullScreen: boolean;
     /**
      * Whether or not to dock borders
+     * @remarks This may have an impact on performance, especially on slower devices.
      * @default true
      * @example
      * For example, these overlapping borders
@@ -262,18 +272,8 @@ export default class Screen extends Node {
         const x = typeof n[0] === 'number' && !isNaN(n[0]) ? n[0] : -1;
         const y = typeof n[1] === 'number' && !isNaN(n[1]) ? n[1] : -1;
         this.#mouseCoords = [x, y];
-        const oldHover = this.hovered;
-        this.hovered = this.pixelOwnership(this.mouseCoords[0], this.mouseCoords[1], this.#sortCache, true);
         this.emit('move', ...this.#mouseCoords);
-        if (
-            (
-                this.hovered && this.hovered instanceof Element &&
-                Object.keys(this.hovered.style.hover ?? {}).length > 0 && this.#initRender
-            ) || (
-                oldHover && oldHover !== this.hovered && oldHover instanceof Element &&
-                Object.keys(oldHover.style.hover ?? {}).length > 0 && this.#initRender
-            )
-        ) this.render();
+        this._reloadHover();
     }
     #title: string;
     #resizeTimer?: ReturnType<typeof setTimeout>;
@@ -333,9 +333,9 @@ export default class Screen extends Node {
             disableChecks: opts.disableChecks ?? false,
             interactive: opts.interactive ?? opts.disableChecks ? true : isIntr(),
             hideCursor: opts.hideCursor ?? true,
-            stdout: opts.stdout ?? process.stdout,
+            stdout: opts.stdout ?? opts.output ?? process.stdout,
             bitDepth: opts.bitDepth ?? opts.disableChecks ? 24 : (opts.stdout ?? process.stdout).getColorDepth(),
-            stdin: opts.stdin ?? process.stdin,
+            stdin: opts.stdin ?? opts.input ?? process.stdin,
             fullScreen: opts.fullScreen ?? true,
             dockBorders: opts.dockBorders ?? true,
             ignoreDockContrast: opts.ignoreDockContrast ?? false,
@@ -357,7 +357,6 @@ export default class Screen extends Node {
         this.on('resize', (d: Dims) => {
             this.width = d.cols;
             this.height = d.rows;
-            this.emitDescendantsExSelf('resize');
             if (this.#initRender) this.render();
         });
         this.opts.stdout.on('resize', () => {
@@ -490,6 +489,19 @@ export default class Screen extends Node {
         d.height = d.rows = rows;
         return d;
     }
+    _reloadHover() {
+        const oldHover = this.hovered;
+        this.hovered = this.pixelOwnership(this.mouseCoords[0], this.mouseCoords[1], this.#sortCache, true);
+        if (
+            (
+                this.hovered && (this.hovered instanceof Element) &&
+                Object.keys(this.hovered.style.hover ?? {}).length > 0 && this.#initRender
+            ) || (
+                oldHover && oldHover !== this.hovered && oldHover instanceof Element &&
+                Object.keys(oldHover.style.hover ?? {}).length > 0 && this.#initRender
+            )
+        ) this.render();
+    }
     /**
      * Test if a value is a RegExp
      * @param r The value to test
@@ -507,6 +519,13 @@ export default class Screen extends Node {
             Keys.disableMouse();
             this.opts.stdin.pause();
         }
+    }
+    /**
+     * Get an index
+     * @returns The index to use TODO: add index registry
+     */
+    _getIndex(): number {
+        return this.children.length;
     }
 
     // key stuff
