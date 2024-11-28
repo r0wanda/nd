@@ -11,7 +11,6 @@
     "test": "node dist/test.js 2> errfile",
     "lint": "eslint .",
     "docs": "typedoc --out docs src/*.ts",
-    "prettier": "prettier",
     "cloc": "cloc . --exclude-dir=node_modules,dist,old"
   },
   "repository": {
