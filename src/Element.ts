@@ -478,6 +478,17 @@ export interface Percentage {
     percent: number;
     offset: number;
 }
+export interface ElementKeyOptions extends KeyOptions {
+    /**
+     * Pick up keys globally
+     * @remarks Equivalent to Element.screen.key
+     */
+    global?: boolean;
+    /**
+     * Focus
+     */
+    focus: 
+}
 
 /**
  * Object representation of a tag
@@ -1145,7 +1156,7 @@ export default class Element extends Node {
      * Generate a Mat from the content
      * @internal
      */
-    _genContent(ret = false, color = this.screen?.color) {
+    _genContent(ret = false, color = this.screen?._color) {
         const style = this._mergeStyle();
         // main mat
         const m = new Mat(this.width, this.height, '');
@@ -1437,8 +1448,8 @@ export default class Element extends Node {
     }
     render() {
         const style = this._mergeStyle();
-        if (!this.screen?.color) throw new Error('Render cannot be run if no screen is available');
-        const color = this.screen.color;
+        if (!this.screen?._color) throw new Error('Render cannot be run if no screen is available');
+        const color = this.screen._color;
         let width = this.width;
         let height = this.height;
         //console.error(width + this.aleft, height + this.atop);

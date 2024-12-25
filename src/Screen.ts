@@ -41,12 +41,12 @@ export interface ScreenOptions {
      */
     resizeTimeout: number;
     /**
-     * Disable terminal checks (eg. interactive, colors) (not recommended)
+     * Disable all terminal checks (eg. interactive, colors) (not recommended)
      * @default false
      */
     disableChecks: boolean;
     /**
-     * Override inteactive-ness check (not recommended)
+     * Override interactive check (not recommended)
      * @default false
      */
     interactive: boolean;
@@ -107,11 +107,6 @@ export interface ScreenOptions {
      * @default false
      */
     ignoreDockContrast: boolean;
-    /**
-     * Maximum times a sort will be ran to ensure no overlapping indexes
-     * @default 10
-     */
-    maxSortRecursion: number;
 }
 
 /**
@@ -167,23 +162,30 @@ export interface KeyOptions {
     /**
      * Use glob matching
      * @see {@link https://github.com/isaacs/minimatch#minimatch}
+     * @default true
      */
     glob?: boolean;
     /**
      * Use shorthand
+     * @default true
      */
     shorthand?: boolean;
     /**
-     * Internal option for registering element-specific keys
-     * @internal
-     * @remarks You could use this instead of Element.key, but why?
+     * Register element-specific keys
+     * @remarks Equivalent to Element.key
      */
     elem?: Element;
     /**
      * Whether or not to send key if element is being hovered (by default it will only work if focused)
      * @remarks Only relavent to Element.key, not Screen.key
+     * @default false
      */
     hover?: boolean;
+    /**
+     * Execute once, then remove listener
+     * @default false
+     */
+    once?: boolean;
 }
 /**
  * Object representation of a parsed key
@@ -263,7 +265,7 @@ export default class Screen extends Node {
     }
     set bitDepth(d: number) {
         this.opts.bitDepth = d;
-        this.color = new Color(this.opts.bitDepth);
+        this._color = new Color(this.opts.bitDepth);
     }
     get mouseCoords(): number[] {
         return this.#mouseCoords
@@ -282,10 +284,13 @@ export default class Screen extends Node {
     #bReg: BorderRegistry;
     #initRender: boolean;
     #sortCache: Element[];
-    readonly emptyBReg: BorderRegistry;
+    readonly _emptyBReg: BorderRegistry;
+    /**
+     * Ready for keyboard input
+     */
     keyReady: boolean;
-    color: Color;
-    keys: KeyMatch[];
+    _color: Color;
+    _keys: KeyMatch[];
     #mouseCoords: number[];
     constructor(opts: Partial<ScreenOptions> = {}) {
         super();
@@ -296,7 +301,7 @@ export default class Screen extends Node {
         this.#clearCoords = this.#fillCoords = [];
         this.#mouseCoords = [-1, -1];
         this.keyReady = false;
-        this.emptyBReg = {
+        this._emptyBReg = {
             row: [],
             col: [],
             tl: [], tr: [],
@@ -318,7 +323,7 @@ export default class Screen extends Node {
             }
         }
         // clone to avoid editing emptyBReg
-        const br: BorderRegistry = structuredClone(this.emptyBReg);
+        const br: BorderRegistry = structuredClone(this._emptyBReg);
         for (const bd of bds) {
             for (const k in bd) {
                 if (!Element.isBorderKey(k) || k === 'type') continue;
@@ -339,7 +344,6 @@ export default class Screen extends Node {
             fullScreen: opts.fullScreen ?? true,
             dockBorders: opts.dockBorders ?? true,
             ignoreDockContrast: opts.ignoreDockContrast ?? false,
-            maxSortRecursion: opts.maxSortRecursion ?? 10
         }
 
         // option checks
@@ -370,17 +374,18 @@ export default class Screen extends Node {
             this.#sortCache = this._completeSort();
             if (this.children.includes(n)) n.setScreen(this, true);
         });
-        this.color = new Color(this.opts.bitDepth);
+        this._color = new Color(this.opts.bitDepth);
 
         // keys
         this.enableInput();
-        this.keys = [];
+        this._keys = [];
         this.opts.stdin.on('keypress', (ch: string, key?: Key) => {
             // if ch is undef, use name, if neither then return :(
             const c = key?.name || ch;
             if (!c) return;
-            for (const _m of this.keys) {
+            for (const _m of this._keys) {
                 k: for (const m of _m.val) {
+                    // m: Shorthand
                     try {
                         // cant check mods if key is undefined
                         if ((m.mod.ctrl || m.mod.meta || m.mod.shift) && !key) continue k;
@@ -388,8 +393,11 @@ export default class Screen extends Node {
                         if ((m.mod.ctrl && !key!.ctrl) || (!m.mod.ctrl && key?.ctrl)) continue k;
                         if ((m.mod.meta && !key!.meta) || (!m.mod.meta && key?.meta)) continue k;
                         if ((m.mod.shift && !key!.shift) || (!m.mod.shift && key?.shift)) continue k;
+                        
                         let mtch = false;
+                        // match glob
                         if (m.glob && typeof m.ch === 'string') mtch = minimatch(c, m.ch);
+                        // match regex
                         else if (Screen.isRegex(m.ch)) mtch = c.search(m.ch) >= 0;
                         else if (typeof m.ch === 'string') mtch = m.ch === c;
                         if (mtch) {
@@ -471,7 +479,7 @@ export default class Screen extends Node {
                 p[k].push(...c[k]);
             }
             return p;
-        }, structuredClone(this.emptyBReg));
+        }, structuredClone(this._emptyBReg));
         for (const k in this.#bReg) {
             if (!Element.isBorderKey(k) || k === 'type') continue;
             this.#bReg[k].push(...bd[k]);
@@ -546,7 +554,7 @@ export default class Screen extends Node {
      * @internal
      * @param k The key to parse
      */
-    _parseShorthand(k: string, glob = true): Shorthand {
+    static _parseShorthand(k: string, glob = true): Shorthand {
         const p = k.split('-').filter(i => i.length > 0);
         let ch = '';
         let ctrl = false;
@@ -575,6 +583,9 @@ export default class Screen extends Node {
             glob
         }
     }
+    _parseShorthand(k: string, glob = true): Shorthand {
+        return Screen._parseShorthand(k, glob);
+    }
     /**
      * Perform assert.deep(Strict)Equal
      * @param act Actual
@@ -583,7 +594,9 @@ export default class Screen extends Node {
      */
     static deepEq(act: unknown, exp: unknown, strict = true): boolean {
         try {
-            assert[`deep${strict ? 'Strict' : ''}Equal`](act, exp);
+            type KeyType = 'deepStrictEqual' | 'deepEqual'
+            const key: KeyType = `deep${strict ? 'Strict' : ''}Equal`;
+            assert[key](act, exp);
             return true;
         } catch {
             return false;
@@ -594,10 +607,10 @@ export default class Screen extends Node {
      * @internal
      * @param k1 The input
      * @param k2 The Shorthand to check
-     * @param opts 
+     * @param opts The KeyOptions used
      * @returns 
      */
-    _eqShorthand(k1: string | RegExp | Shorthand, k2: Shorthand, opts?: KeyOptions): boolean {
+    static _eqShorthand(k1: string | RegExp | Shorthand, k2: Shorthand, opts?: KeyOptions): boolean {
         if (typeof k1 !== 'string' && !Screen.isRegex(k1)) k1 = k1.raw; // elim shorthand
         const genSh = (k: string | RegExp) => {
             const p: Shorthand = {
@@ -611,7 +624,7 @@ export default class Screen extends Node {
                 glob: opts?.glob ?? true
             }
             if (opts?.shorthand && typeof k === 'string') {
-                Object.assign(p, this._parseShorthand(k));
+                Object.assign(p, Screen._parseShorthand(k));
             }
             return p;
         }
@@ -625,19 +638,30 @@ export default class Screen extends Node {
      * @param v The value/array
      * @param noDup No duplicates (default true)
      */
-    static toArr(v: any | any[], noDup = true): toArrOutput<typeof v> {
-        return noDup ? [...new Set(v)] : [...v];
+    static _toArr<V extends any | any[]>(v: V, noDup = true): toArrOutput<V> {
+        if (Array.isArray(v)) {
+            return <toArrOutput<V>>(noDup ? [...new Set(v)] : [...v]);
+        }
+        return <toArrOutput<V>>[v];
     }
     /**
      * Begin listening for a key(s)
      * @param keys The key(s) to listen for, in raw, shorthand, or regex format
      * @param cb The callback
-     * @param opts 
+     * @param opts The options for the key
      */
-    key(key: (string | RegExp)[] | string | RegExp, cb: (ch: string, key: Key | undefined) => void, opts?: KeyOptions): void {
+    key(key: (string | RegExp)[] | string | RegExp, cb: ((ch: string, key: Key | undefined) => void) | ((ch: string, key: Key | undefined) => void)[], opts?: KeyOptions): void {
         if (!this.keyReady) this.enableInput();
-        const _k: toArrOutput<typeof key> = Screen.toArr(key);
-        this.keys.push({
+        const _k = Screen._toArr(key);
+        if (Array.isArray(cb)) {
+            const _cb = cb;
+            cb = (...args: [string, Key | undefined]) => {
+                for (const callback of _cb) {
+                    callback(...args);
+                }
+            }
+        }
+        this._keys.push({
             val: _k.map(k => {
                 const res: Shorthand = {
                     mod: {
@@ -659,47 +683,110 @@ export default class Screen extends Node {
             cb
         });
     }
+    static _compArr<T>(a: T[], b: T[], cmp: (a: T, b: T) => boolean): boolean {
+        if (a.length !== b.length) return false;
+        // every element in a is equivalent to an element in b
+        const aOverlap = a.every(ac => b.some(bc => cmp(ac, bc)));
+        // every element in b is equivalent to an element in a
+        const bOverlap = b.every(bc => a.some(ac => cmp(ac, bc)));
+        return aOverlap && bOverlap;
+    }
     /**
      * Remove a key by callback or key input
      * @param key The key(s) or callback to remove
+     * @param cb The callback associated with the keys (not required if the first argument is a callback)
+     * @param matchAllKeys Must match all keys. For example, if `Screen.key` is called with an array of keys, the given array here must have the same items as that array (ignoring order).
+     * @remarks This function only removes the specified key(s) for the given callback. If there were multiple keys in the call to `Screen.key` that weren't specified here, they won't be removed.
+     * @remarks The matchAllKeys argument has the side effect of removing the instance, as there will be no more keys associated with it.
      */
-    removeKey(key: (string | RegExp)[] | string | RegExp | ((ch: string, key: Key | undefined) => void)) {
-        this.keys = <KeyMatch[]>this.keys.map(k => {
+    removeKey(cb: (ch: string, key: Key | undefined) => void): void
+    removeKey(key: (string | RegExp)[] | string | RegExp, cb: (ch: string, key: Key | undefined) => void, matchAllKeys?: boolean): void
+    removeKey(key: (string | RegExp)[] | string | RegExp | ((ch: string, key: Key | undefined) => void), cb?: (ch: string, key: Key | undefined) => void, matchAllKeys = false): void {
+        if (typeof key === 'function') cb = key;
+        if (!cb) return;
+        for (let i = 0; i < this._keys.length; i++) {
+            const k = this._keys[i];
+            if (k.cb !== cb) continue;
             if (typeof key === 'function') {
-                if (k.cb === key) return null;
-            } else {
-                k.val = k.val.filter(v => (<toArrOutput<typeof key>>Screen.toArr(key)).some(_k => this._eqShorthand(_k, v,)));
-                return k;
+                this._keys.splice(i--, 1);
+                continue;
             }
-        }).filter(k => !!k);
+            if (matchAllKeys) {
+                if (!Array.isArray(key) && k.val.length === 1) {
+                    if (Screen._eqShorthand(key, k.val[0])) {
+                        this._keys.splice(i--, 1);
+                    }
+                    continue;
+                }
+                const keyArr = Screen._toArr(key);
+                // @ts-ignore
+                if (Screen._compArr(keyArr, k.val, Screen._eqShorthand)) {
+                    this._keys.splice(i--, 1);
+                }
+                continue;
+            }
+            k.val = k.val.filter(v => Array.isArray(key) ? key.some(_k => Screen._eqShorthand(_k, v)) : Screen._eqShorthand(<string | RegExp>key, v));
+            if (k.val.length > 1) {
+                this._keys.splice(i--, 1);
+                continue;
+            }
+            this._keys[i] = k;
+        }
     }
     /**
-     * Same as removeKey, except if a key is found in an instance, the entire instance is removed
-     * @param key The key(s) or callback to remove
+     * Remove all keys from any of their listeners
+     * @param key The key(s) to remove
+     * @param matchAllKeys Must match all keys. For example, if `Screen.key` is called with an array of keys, the given array here must have the same items as that array (ignoring order).
+     * @remarks This function only removes the specified key(s) for the given callback. If there were multiple keys in the call to `Screen.key` that weren't specified here, they won't be removed.
+     * @remarks The matchAllKeys argument has the side effect of removing the instance, as there will be no more keys associated with it.
      */
-    removeAllKeyInstances(key: (string | RegExp)[] | string | RegExp | ((ch: string, key: Key | undefined) => void)) {
-        this.keys = <KeyMatch[]>this.keys.map(k => {
-            if (typeof key === 'function') {
-                if (k.cb === key) return null;
-            } else if (k.val.some(v => (<toArrOutput<typeof key>>Screen.toArr(key)).some(_k => this._eqShorthand(_k, v,)))) {
-                return null;
-            } else {
-                return k;
+    removeAllKeys(key: (string | RegExp)[] | string | RegExp, matchAllKeys = false) {
+        for (let i = 0; i < this._keys.length; i++) {
+            const k = this._keys[i];
+            if (matchAllKeys) {
+                if (!Array.isArray(key) && k.val.length === 1) {
+                    if (Screen._eqShorthand(key, k.val[0])) {
+                        this._keys.splice(i--, 1);
+                    }
+                    continue;
+                }
+                key = Screen._toArr(key);
+                // @ts-ignore
+                if (Screen._compArr(key, k.val, Screen._eqShorthand)) {
+                    this._keys.splice(i--, 1);
+                }
+                continue;
             }
-        }).filter(k => !!k);
+            for (let v = 0; v < k.val.length; v++) {
+                if (Array.isArray(key)) {
+                    if (key.some(tkey => Screen._eqShorthand(tkey, k.val[v]))) {
+                        k.val.splice(v--, 1);
+                    }
+                } else {
+                    if (Screen._eqShorthand(key, k.val[v])) {
+                        k.val.splice(v--, 1);
+                    }
+                }
+            }
+            if (k.val.length < 1) {
+                this._keys.splice(i--, 1);
+                continue;
+            }
+            this._keys[i] = k;
+        }
     }
     /**
      * Clear all keys
      */
     clearKeys() {
-        this.keys = [];
+        this._keys = [];
     }
     /**
-     * Wait for a key
-     * @param keys 
-     * @param timeout 
-     * @param opts 
-     * @returns 
+     * Wait for a key to be pressed
+     * @param keys The key(s) to wait for (if any are pressed it will be triggered, not all)
+     * @param timeout If the key is not triggered by then, an error will be thrown. -1 specifies no timeout, default 6e5 (10 minutes)
+     * @param opts The options for `Screen.key`
+     * @returns A promise that resolves when the key is pressed and rejects with an Error if the timeout is reached
      */
     waitForKey(keys: (string | RegExp)[] | string | RegExp, timeout = 6e5, opts?: KeyOptions): Promise<WaitForKey> {
         return new Promise<WaitForKey>((r, j) => {
@@ -710,10 +797,10 @@ export default class Screen extends Node {
             this.key(keys, listen, opts);
             if (timeout > 0) setTimeout(() => {
                 // eslint-disable-next-line no-empty
-                try { this.removeKey(listen); } catch { }
+                try { this.removeKey(listen); } catch {};
                 j(new Error('Timeout exceeded waiting for key'));
             }, timeout);
-        })
+        });
     }
 
     // rendering
@@ -732,7 +819,8 @@ export default class Screen extends Node {
             }
             i.push(ch.index);
         }
-        if (recur > this.opts.maxSortRecursion) throw new Error('Too much recursion, could not sort indexes')
+        // FIXME: find a better way to do this
+        if (recur > 10) throw new Error('Too much recursion, could not sort indexes')
         return i.length !== [...new Set(i)].length ? this._clearDuplicates(recur) : this.pruneNodes();
     }
     /**
@@ -887,7 +975,7 @@ export default class Screen extends Node {
         for (const c of this.#fillCoords) {
             if (c.length !== 4) continue;
             if (typeof c[0] === 'number' && typeof c[1] === 'number' && (typeof c[2] === 'string' || c[2] instanceof tc) && typeof c[3] === 'string') {
-                m.xy(c[0], c[1], `${this.color.parse(c[2])}${c[3]}\x1b[0m`)
+                m.xy(c[0], c[1], `${this._color.parse(c[2])}${c[3]}\x1b[0m`)
             }
         }
         //console.error(this.opts)
@@ -906,4 +994,3 @@ export default class Screen extends Node {
         this.opts.stdout.write(data);
     }
 }
-
