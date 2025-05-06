@@ -34,8 +34,6 @@ function isColorLookupMap(m: any): m is ColorLookupMap {
 }
 
 // i feel like xterm is a good baseline for these colors even if no one uses (or should use) xterm
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const Color2Bit = (_rgb: ColorFormats.RGB, _bg?: boolean) => '';
 /**
  * 4 bit colors (xterm rgb values)
  */
@@ -342,7 +340,20 @@ export type ColorLookups = Map<number, ColorLookupMap | ((rgb: ColorFormats.RGB,
 export type ColorLookupIterable = [number, (ColorLookupMap | ((rgb: ColorFormats.RGB, bg?: boolean) => string))][];
 
 export default class Color {
-    depth: number;
+    /**
+     * Color bit depth
+     */
+    get depth() {
+        return this._depth;
+    }
+    set depth(depth: number) {
+        if (depth >= 24) depth = 24;
+        else if (depth >= 8) depth = 8;
+        else if (depth >= 4) depth = 4;
+        else depth = 1;
+        this._depth = depth;
+    }
+    _depth!: number;
     /**
      * A map containing colors and values
      */
@@ -355,7 +366,6 @@ export default class Color {
     constructor(bitDepth: number = process.stdout.getColorDepth(), colorLookup?: ColorLookups) {
         this.depth = bitDepth;
         this.colorLookup = colorLookup || new Map(<ColorLookupIterable>[
-            [2, Color2Bit],
             [4, Color4Bit],
             [8, Color8Bit],
             [24, this.rgb]

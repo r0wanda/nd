@@ -37,17 +37,26 @@ ln.focus();
 new nd.Element({
     fg: 'black',
     bg: 'blue',
-    content: 'left─sep─era─tor{|}right seperator{/red-bg}',
+    content: 'left─sep─\tera	─tor{|}right seperator{/red-bg}',
     screen: scr,
     width: '50%',
     height: '50%',
     left: '20%',
     top: '20%',
+    label: 'other box',
+    style: {
+        label: {
+            //padding: 1,
+            side: 'center',
+        }
+    },
     border: {
         type: 'line',
         lineType: 'double'
     }
 });
+
+ln.moveToFront();
 
 scr.render();
 

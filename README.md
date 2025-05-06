@@ -5,8 +5,7 @@
 
 TODO: add gif
 
-# Documentation
-
+## [Skip to the docs!](#documentation)
 
 # Install
 Npm:
@@ -57,6 +56,10 @@ screen.key(['esc*', 'q', 'C-c'], (ch, key) => {
 
 screen.render();
 ```
+
+# Documentation
+
+# Extras
 
 ## Goals
 - Implement almost all parts of the blessed api (not including redundant/useless features)

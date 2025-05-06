@@ -8,7 +8,8 @@
   "scripts": {
     "prepublish": "tsc",
     "pretest": "tsc && eslint .",
-    "test": "node dist/test.js 2> errfile",
+    "test": "node --enable-source-maps --inspect dist/test.js 2> errfile",
+    "jest": "tsc && NODE_OPTIONS=\"--experimental-vm-modules\" NODE_NO_WARNINGS=1 jest",
     "lint": "eslint .",
     "docs": "typedoc --out docs src/*.ts",
     "cloc": "cloc . --exclude-dir=node_modules,dist,old"
@@ -41,12 +42,17 @@
     "tinycolor2": "^1.6.0"
   },
   "devDependencies": {
+    "@jest/globals": "^29.7.0",
     "@microsoft/eslint-formatter-sarif": "^3.1.0",
     "@types/node": "^20.11.8",
     "@types/tinycolor2": "^1.4.6",
     "@typescript-eslint/eslint-plugin": "^6.8.0",
     "@typescript-eslint/parser": "^6.8.0",
     "eslint": "^8.52.0",
+    "flat": "^6.0.1",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
     "typedoc": "^0.25.2",
     "typescript": "^5.2.2"
   }

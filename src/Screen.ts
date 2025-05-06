@@ -4,7 +4,7 @@ import Node from './Node.js';
 import Element, { Border_t, Border, BorderArc, BorderDash, BorderDouble, BorderHeavy, BorderHeavyDash } from './Element.js';
 import Color from './Color.js';
 import Keys from './Keys.js';
-import Joints, { boxRe } from './Joints.js';
+import Joints, { _classifyJoint, boxRe } from './Joints.js';
 import tc from 'tinycolor2';
 import { minimatch } from 'minimatch';
 import isIntr from 'is-interactive';
@@ -107,6 +107,11 @@ export interface ScreenOptions {
      * @default false
      */
     ignoreDockContrast: boolean;
+    /**
+     * The width of tabs in an element's content
+     * @default 4
+     */
+    tabSize: number;
 }
 
 /**
@@ -144,7 +149,10 @@ export interface KeyMatch {
     val: Shorthand[];
     elem?: Element;
     hover?: boolean;
+    once?: boolean;
+    origKey: (string | RegExp)[] | string | RegExp;
     cb: (ch: string, key: Key | undefined) => void;
+    err?: (err: unknown) => void;
 }
 
 /**
@@ -186,6 +194,11 @@ export interface KeyOptions {
      * @default false
      */
     once?: boolean;
+    /**
+     * A function to call if an error is thrown
+     * @param err The error thrown
+     */
+    err?: (err: unknown) => void;
 }
 /**
  * Object representation of a parsed key
@@ -220,7 +233,30 @@ export interface BorderWants {
     ch: string;
 }
 /**
- * Border registry, easy way to look up border weight, and also extensible to new/user-defined borders
+ * Coordinate object
+ */
+export interface Coords {
+    /**
+     * Relative X coordinate
+     */
+    x?: number;
+    /**
+     * Relative Y coordinate
+     */
+    y?: number;
+    elem?: Element;
+    /**
+     * Absolute X coordinate
+     */
+    xAbs: number;
+    /**
+     * Absolute Y coordinate
+     */
+    yAbs: number;
+}
+/**
+ * Border registry, easy way to look up border weight
+ * TODO: find more efficent way to do this (low priority)
  */
 export interface BorderRegistry {
     row: BorderWants[];
@@ -233,6 +269,7 @@ export default class Screen extends Node {
     opts: ScreenOptions;
     focused?: Node;
     hovered?: Node;
+    children: Element[];
     width: number;
     height: number;
     get cols() {
@@ -283,8 +320,6 @@ export default class Screen extends Node {
     #fillCoords: (number | tc.ColorInput | string)[][];
     #bReg: BorderRegistry;
     #initRender: boolean;
-    #sortCache: Element[];
-    readonly _emptyBReg: BorderRegistry;
     /**
      * Ready for keyboard input
      */
@@ -301,12 +336,7 @@ export default class Screen extends Node {
         this.#clearCoords = this.#fillCoords = [];
         this.#mouseCoords = [-1, -1];
         this.keyReady = false;
-        this._emptyBReg = {
-            row: [],
-            col: [],
-            tl: [], tr: [],
-            bl: [], br: []
-        }
+        this.children = [];
         const bds = [Border, BorderArc, BorderDash, BorderDouble, BorderHeavy, BorderHeavyDash];
         function constructBorderWants(bd: Border_t, k: keyof Border_t) {
             if (!bd.type || bd.type.search(/s|h|d/g) < 0) throw new Error('constructBorderWants: Only provided borders, or borders with a specified type can be used');
@@ -322,8 +352,12 @@ export default class Screen extends Node {
                 default: throw new Error('constructBorderWants: Only border character keys can be used')
             }
         }
-        // clone to avoid editing emptyBReg
-        const br: BorderRegistry = structuredClone(this._emptyBReg);
+        const br: BorderRegistry = {
+            row: [],
+            col: [],
+            tl: [], tr: [],
+            bl: [], br: []
+        }
         for (const bd of bds) {
             for (const k in bd) {
                 if (!Element.isBorderKey(k) || k === 'type') continue;
@@ -331,29 +365,28 @@ export default class Screen extends Node {
             }
         }
         this.#bReg = br;
-        // note: only use sortcache outside of rendering
 
         this.opts = {
-            resizeTimeout: opts.resizeTimeout ?? 300,
-            disableChecks: opts.disableChecks ?? false,
-            interactive: opts.interactive ?? opts.disableChecks ? true : isIntr(),
-            hideCursor: opts.hideCursor ?? true,
+            resizeTimeout: opts.resizeTimeout!,
+            disableChecks: !!(opts.disableChecks ?? false),
+            interactive: !!(opts.interactive ?? opts.disableChecks ? true : isIntr()),
+            hideCursor: !!(opts.hideCursor ?? true),
             stdout: opts.stdout ?? opts.output ?? process.stdout,
-            bitDepth: opts.bitDepth ?? opts.disableChecks ? 24 : (opts.stdout ?? process.stdout).getColorDepth(),
+            bitDepth: opts.bitDepth!,
             stdin: opts.stdin ?? opts.input ?? process.stdin,
             fullScreen: opts.fullScreen ?? true,
             dockBorders: opts.dockBorders ?? true,
             ignoreDockContrast: opts.ignoreDockContrast ?? false,
+            tabSize: opts.tabSize ?? 4
         }
 
         // option checks
+        if (typeof this.opts.resizeTimeout !== 'number' || this.opts.resizeTimeout < 0) this.opts.resizeTimeout = 300;
+        if (![1, 4, 8, 24].includes(this.opts.bitDepth)) this.opts.bitDepth = opts.disableChecks ? 24 : (opts.stdout ?? process.stdout).getColorDepth();
         if (!this.opts.interactive) throw new Error('Terminal is not interactive');
         if (this.opts.hideCursor) this.write(Ansi.cur.hide);
         if (this.opts.fullScreen) this.write(Ansi.scrn.alt.enter);
         process.on('exit', this.exit.bind(this));
-
-        // initialize sort cache
-        this.#sortCache = this._completeSort();
 
         // stdout stuff
         this.width = this.opts.stdout.columns;
@@ -371,8 +404,7 @@ export default class Screen extends Node {
             }, this.opts.resizeTimeout);
         });
         this.on('_node', (n: Node) => {
-            this.#sortCache = this._completeSort();
-            if (this.children.includes(n)) n.setScreen(this, true);
+            if ((n instanceof Element) && n.screen !== this) n.setScreen(this, true);
         });
         this._color = new Color(this.opts.bitDepth);
 
@@ -384,6 +416,13 @@ export default class Screen extends Node {
             const c = key?.name || ch;
             if (!c) return;
             for (const _m of this._keys) {
+                if (_m.elem) {
+                    if (_m.hover) {
+                        if (this.hovered !== _m.elem) continue;
+                    } else {
+                        if (this.focused !== _m.elem) continue
+                    }
+                }
                 k: for (const m of _m.val) {
                     // m: Shorthand
                     try {
@@ -393,7 +432,7 @@ export default class Screen extends Node {
                         if ((m.mod.ctrl && !key!.ctrl) || (!m.mod.ctrl && key?.ctrl)) continue k;
                         if ((m.mod.meta && !key!.meta) || (!m.mod.meta && key?.meta)) continue k;
                         if ((m.mod.shift && !key!.shift) || (!m.mod.shift && key?.shift)) continue k;
-                        
+
                         let mtch = false;
                         // match glob
                         if (m.glob && typeof m.ch === 'string') mtch = minimatch(c, m.ch);
@@ -401,14 +440,16 @@ export default class Screen extends Node {
                         else if (Screen.isRegex(m.ch)) mtch = c.search(m.ch) >= 0;
                         else if (typeof m.ch === 'string') mtch = m.ch === c;
                         if (mtch) {
-                            if (_m.elem) {
-                                if (_m.hover && this.hovered === _m.elem) _m.cb(ch, key);
-                                else if (this.focused === _m.elem) _m.cb(ch, key);
-                            } else _m.cb(ch, key);
+                            if (_m.once) this.removeKey(_m.origKey, _m.cb, true)
+                            _m.cb(ch, key);
                             break k;
                         }
                     } catch (err) {
-                        // TODO: handle error
+                        try {
+                            _m.err?.(err);
+                        } catch {
+                            // not much else to do if cb and error handler fail
+                        }
                     }
                 }
             }
@@ -417,10 +458,10 @@ export default class Screen extends Node {
         // mouse
         this.opts.stdin.on('click', (x: number, y: number) => {
             this.mouseCoords = [x, y];
-            const elem = this.pixelOwnership(x, y, this.#sortCache, true);
+            const elem = this.pixelOwnership(x, y);
             if (!elem) return;
-            elem.focus();
-            elem.emit('click');
+            if (elem.opts.clickable) elem.focus();
+            elem.emit('click', x, y);
         });
         this.opts.stdin.on('middleclick', (x: number, y: number) => {
             this.mouseCoords = [x, y];
@@ -448,13 +489,12 @@ export default class Screen extends Node {
         });
         this.opts.stdin.on('scrollup', (x: number, y: number) => {
             this.mouseCoords = [x, y];
-            this.pixelOwnership(x, y, this.#sortCache, true)?.emit('scrollup');
+            this.pixelOwnership(x, y)?.emit('scrollup');
         });
         this.opts.stdin.on('scrolldown', (x: number, y: number) => {
             this.mouseCoords = [x, y];
-            const owner = this.pixelOwnership(x, y, this.#sortCache, true);
+            const owner = this.pixelOwnership(x, y);
             if (owner) {
-                console.error('owner');
                 owner.emit('scrolldown');
             }
         });
@@ -468,6 +508,15 @@ export default class Screen extends Node {
         });
     }
     /**
+     * Construct Coords object
+     * @param x Absolute x coordinate
+     * @param y Absolute y coordinate
+     * @param elem Element (if applicable)
+     */
+    _constructCoords(x: number, y: number, elem?: Element): Coords {
+        
+    }
+    /**
      * Append Border_t(s) to the BorderRegistry
      * @param bds The Border_t(s)
      */
@@ -479,7 +528,12 @@ export default class Screen extends Node {
                 p[k].push(...c[k]);
             }
             return p;
-        }, structuredClone(this._emptyBReg));
+        }, {
+            row: [],
+            col: [],
+            tl: [], tr: [],
+            bl: [], br: []
+        });
         for (const k in this.#bReg) {
             if (!Element.isBorderKey(k) || k === 'type') continue;
             this.#bReg[k].push(...bd[k]);
@@ -499,7 +553,7 @@ export default class Screen extends Node {
     }
     _reloadHover() {
         const oldHover = this.hovered;
-        this.hovered = this.pixelOwnership(this.mouseCoords[0], this.mouseCoords[1], this.#sortCache, true);
+        this.hovered = this.pixelOwnership(this.mouseCoords[0], this.mouseCoords[1]);
         if (
             (
                 this.hovered && (this.hovered instanceof Element) &&
@@ -678,8 +732,11 @@ export default class Screen extends Node {
                 }
                 return res;
             }),
+            origKey: key,
+            err: opts?.err,
             elem: opts?.elem,
             hover: opts?.hover,
+            once: opts?.once,
             cb
         });
     }
@@ -797,7 +854,7 @@ export default class Screen extends Node {
             this.key(keys, listen, opts);
             if (timeout > 0) setTimeout(() => {
                 // eslint-disable-next-line no-empty
-                try { this.removeKey(listen); } catch {};
+                try { this.removeKey(listen); } catch { };
                 j(new Error('Timeout exceeded waiting for key'));
             }, timeout);
         });
@@ -807,7 +864,7 @@ export default class Screen extends Node {
     /**
      * Clear out duplicate Element indexes
      * @internal
-     */
+     *
     _clearDuplicates(recur = 0): Element[] {
         const i: number[] = [];
         for (const ch of this.pruneNodes()) {
@@ -828,23 +885,24 @@ export default class Screen extends Node {
      * @internal
      * @param chs An array of elements to sort, assuming that duplicates have been cleared (will not be done automatically if this is supplied)
      * @returns A sorted array of elements
-     */
+     *
     _completeSort(chs?: Element[]): Element[] {
         return (chs ?? this._clearDuplicates()).toSorted((a, b) => {
             if (a.index === b.index) throw new Error('Indexes must not be equal');
             return a.index > b.index ? -1 : 1;
         });
-    }
+    }*/
     /**
      * Clear a region of screen
-     * @param x1 
-     * @param x2 
-     * @param y1 
-     * @param y2 
+     * @param x1 Start x
+     * @param x2 End x
+     * @param y1 Start y
+     * @param y2 End y
      */
     clearRegion(x1: number, x2: number, y1: number, y2: number) {
         const w = x2 - x1;
         const h = y2 - y1;
+        if (w < 1 || h < 1) throw new RangeError(`Cannot clear negative region or a region with no width or height (Calculated width: ${w}, height: ${h})`);
         for (let y = 0; y < h; y++) {
             for (let x = 0; x < w; x++) {
                 this.#clearCoords.push([x1 + x, y1 + y]);
@@ -878,84 +936,8 @@ export default class Screen extends Node {
      * @param chs List of children to check
      * @returns The element with ownership, or undefined if pixel is unclaimed
      */
-    pixelOwnership(x: number, y: number, chs: Element[], sorted = false): Element | undefined {
-        if (!sorted) chs = this._completeSort(chs);
-        return chs.find(e => e._withinBounds(x, y))
-    }
-    /**
-     * Lookup the BorderRegistry for the BorderWants of a border character
-     * @param ch The char
-     * @returns 
-     */
-    classifyBorder(ch: string): BorderWants | undefined {
-        ch = strip(ch);
-        for (const k in this.#bReg) {
-            // ts being stupid and not making k keyof
-            const f = this.#bReg[<keyof BorderRegistry>k].find((v) => v.ch === ch);
-            if (f) return f;
-        }
-    }
-    /**
-     * A preprocessing function to dock borders
-     * @internal
-     * @param m The mat
-     * @param chs This Screen's children
-     * @returns 
-     */
-    dock(m: Mat, chs: Element[]): Mat {
-        chs = chs.toReversed().filter(e => !!e.style.border);
-        const isOnEdge = (x: number, y: number, err = false) => {
-            if (x < 0 || y < 0 || x >= m.x || y >= m.y) {
-                if (err) throw new RangeError(`isOnEdge: Coordinates (${x},${y}) out of range`);
-                return false;
-            }
-            return !!this.pixelOwnership(x, y, chs, true)?._isOnEdge(x, y);
-        }
-        for (let y = 0; y < m.y; y++) {
-            for (let x = 0; x < m.x; x++) {
-                const c = m.m[y][x];
-                // continue if invalid for docking
-                const owner = this.pixelOwnership(x, y, chs);
-                if (c.search(boxRe) < 0 || !owner?._isOnEdge(x, y) || !owner?.opts.dock) continue;
-                // ~~yikes part starts~~
-                // gets characters to the left or right, undefined if out of range (eg. (-1, -1))
-                // variable name: t: top, b: bottom, etc
-                // tR, bR is topRaw, bottomRaw, etc. raw is the raw characters in the rendered mat that are to the top, bottom, etc of the current char
-                const tR: string | undefined = isOnEdge(x, y - 1) ? m.m[y - 1]?.at(x) : undefined;
-                const bR: string | undefined = isOnEdge(x, y + 1) ? m.m[y + 1]?.at(x) : undefined;
-                const lR: string | undefined = isOnEdge(x - 1, y) ? m.m[y][x - 1] : undefined;
-                const rR: string | undefined = isOnEdge(x + 1, y) ? m.m[y][x + 1] : undefined;
-                // the processed BorderWants (see BorderWants definition at top of file)
-                // generated by querying the borderRegistry
-                const t: BorderWants | undefined = tR ? this.classifyBorder(tR) : undefined;
-                const b: BorderWants | undefined = bR ? this.classifyBorder(bR) : undefined;
-                const l: BorderWants | undefined = lR ? this.classifyBorder(lR) : undefined;
-                const r: BorderWants | undefined = rR ? this.classifyBorder(rR) : undefined;
-                const wants = this.classifyBorder(c);
-                const has: BorderWants = {
-                    t: t?.b,
-                    b: b?.t,
-                    l: l?.r,
-                    r: r?.l,
-                    ch: wants?.ch || 's'
-                }
-                // if all connections are satisfied, continue
-                if (Screen.deepEq(has, wants)) continue;
-                // generate key of Joints (formatting is Shd clockwise (eg. ssss, shss, sdsd, etc...))
-                // not all joint combinations are possible, see top of Joints.ts
-                const key = `${has?.t ?? ''}${has?.r ?? ''}${has.b ?? ''}${has.l ?? ''}`;
-                if (key.length === 3) {
-                    const cat = Joints.triple[<keyof typeof Joints['triple']>`${t ? 't' : ''}${r ? 'r' : ''}${b ? 'b' : ''}${l ? 'l' : ''}`];
-                    const ch: string | undefined = cat[<keyof typeof cat>key];
-                    if (ch) m.xy(x, y, ch);
-                } else if (key.length === 4) {
-                    const ch: string | undefined = Joints.quad[<keyof typeof Joints['quad']>key];
-                    if (ch) m.xy(x, y, ch);
-                }
-                // ~~yikes part ends~~
-            }
-        }
-        return m;
+    pixelOwnership(x: number, y: number, chs = this.children): Element | undefined {
+        return chs.findLast(e => e._withinBounds(x, y))
     }
     /**
      * Render the screen
@@ -963,7 +945,7 @@ export default class Screen extends Node {
     render() {
         this.emitDescendants('prerender');
         const m = new Mat(this.width, this.height);
-        const chs = this._completeSort().toReversed();
+        const chs = this.children;
         for (const ch of chs) {
             if (!(ch instanceof Element)) continue;
             m.overlay(ch.aleft, ch.atop, ch.render());
@@ -979,7 +961,74 @@ export default class Screen extends Node {
             }
         }
         //console.error(this.opts)
-        if (this.opts.dockBorders) m.preProcess(this.dock.bind(this), chs);
+        if (this.opts.dockBorders) m.preProcess((m: Mat) => {
+            const classifyBorder = (ch: string) => {
+                ch = strip(ch);
+                // remove line below if borderregistry/docking is extended to support user-defined borders
+                // this line limits allowed characters to box drawing ones only
+                if (ch.search(boxRe) < 0) return;
+                for (const k in this.#bReg) {
+                    const b = this.#bReg[<keyof BorderRegistry>k];
+                    if (!b) continue;
+                    const f = b.find((v) => v.ch === ch);
+                    if (f) return f;
+                }
+                const joint = _classifyJoint(ch);
+                if (joint) return joint;
+            }
+            const chs = this.children.filter(e => !!e.style.border);
+            const isOnEdge = (x: number, y: number, err = false) => {
+                if (x < 0 || y < 0 || x >= m.x || y >= m.y) {
+                    if (err) throw new RangeError(`isOnEdge: Coordinates (${x},${y}) out of range`);
+                    return false;
+                }
+                return !!this.pixelOwnership(x, y)?._isOnEdge(x, y);
+            }
+            for (let y = 0; y < m.y; y++) {
+                for (let x = 0; x < m.x; x++) {
+                    const c = m.m[y][x];
+                    // continue if invalid for docking
+                    const owner = this.pixelOwnership(x, y, chs);
+                    if (c.search(boxRe) < 0 || !owner?._isOnEdge(x, y) || !owner?.opts.dock) continue;
+                    // gets characters to the left or right, undefined if out of range (eg. (-1, -1))
+                    // variable name: t: top, b: bottom, etc
+                    // tR, bR is topRaw, bottomRaw, etc. raw is the raw characters in the rendered mat that are to the top, bottom, etc of the current char
+                    const tR: string | undefined = isOnEdge(x, y - 1) ? m.m[y - 1]?.at(x) : undefined;
+                    const bR: string | undefined = isOnEdge(x, y + 1) ? m.m[y + 1]?.at(x) : undefined;
+                    const lR: string | undefined = isOnEdge(x - 1, y) ? m.m[y][x - 1] : undefined;
+                    const rR: string | undefined = isOnEdge(x + 1, y) ? m.m[y][x + 1] : undefined;
+                    // the processed BorderWants (see BorderWants definition at top of file)
+                    // generated by querying the borderRegistry
+                    const t: BorderWants | undefined = tR ? classifyBorder(tR) : undefined;
+                    const b: BorderWants | undefined = bR ? classifyBorder(bR) : undefined;
+                    const l: BorderWants | undefined = lR ? classifyBorder(lR) : undefined;
+                    const r: BorderWants | undefined = rR ? classifyBorder(rR) : undefined;
+                    const wants = classifyBorder(c);
+                    const has: BorderWants = {
+                        t: t?.b,
+                        b: b?.t,
+                        l: l?.r,
+                        r: r?.l,
+                        ch: wants?.ch || 's'
+                    }
+                    // if all connections are satisfied, continue
+                    if (Screen.deepEq(has, wants)) continue;
+                    // generate key of Joints (formatting is Shd clockwise (eg. ssss, shss, sdsd, etc...))
+                    // not all joint combinations are possible, see top of Joints.ts
+                    const key = `${has?.t ?? ''}${has?.r ?? ''}${has.b ?? ''}${has.l ?? ''}`;
+                    if (key.length === 3) {
+                        const cat = Joints.triple[<keyof typeof Joints['triple']>`${t ? 't' : ''}${r ? 'r' : ''}${b ? 'b' : ''}${l ? 'l' : ''}`];
+                        const ch: string | undefined = cat[<keyof typeof cat>key];
+                        if (ch) m.xy(x, y, ch);
+                    } else if (key.length === 4) {
+                        const ch: string | undefined = Joints.quad[<keyof typeof Joints['quad']>key];
+                        if (ch) m.xy(x, y, ch);
+                    }
+                    // ~~yikes part ends~~
+                }
+            }
+            return m;
+        }, chs);
         const rend = m.render();
         this.write(rend);
         if (!this.#initRender) this.#initRender = true;

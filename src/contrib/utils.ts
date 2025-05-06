@@ -343,7 +343,7 @@ export class Context {
 Context.init();
 
 export function CanvasCtx(this: { getContext: () => Context }, width: number, height: number, canvasClass: typeof Canvas) {
-	let ctx:  undefined | Context = undefined;
+	let ctx: undefined | Context = undefined;
 	this.getContext = function () {
 		if (!ctx) ctx = new Context(width, height, canvasClass);
 		return ctx;

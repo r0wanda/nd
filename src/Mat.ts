@@ -33,6 +33,7 @@ export default class Mat {
      */
     genMat(blank: string = this.blnk) {
         this.m = [];
+        //if (this.x < 1 || this.y < 1) throw new Range('')
         for (let i = 0; i < this.y; i++) {
             this.m.push(Array(this.x).fill(blank));
         }

@@ -77,7 +77,7 @@ export default new class Keys {
             this.functionKeyCodeReAnywhere.source, this.metaKeyCodeReAnywhere.source, /\x1b./.source
         ].join('|'));
         this.mouseCoords = /(?<=^|;)(.{1,3})(?=;|M)/gi;
-        this.mouseModes = [1000, 1003, 1015, 1006];
+        this.mouseModes = [1000, 1003, 1006, 1015];
     }
     /**
      * Count event instances on an emitter
@@ -110,14 +110,14 @@ export default new class Keys {
                 const r = stream._keypressDecoder.write(b);
                 if (r) emitKeys(stream, r);
             } else {
-                stream.removeListener('data', onData);
+                stream.off('data', onData);
                 stream.on('newListener', onNewListener);
             }
         }
         function onNewListener(event: string) {
             if (event === 'keypress') {
                 stream.on('data', onData);
-                stream.removeListener('newListener', onNewListener);
+                stream.off('newListener', onNewListener);
             }
         }
         if (stream.listeners('keypress').length > 0) {
@@ -170,6 +170,7 @@ export default new class Keys {
                 s = s.toString(stream.readableEncoding || (<KStrmEncode>stream).encoding || 'utf-8');
             }
         }
+        //console.error(s);
 
         if (this.isMouse(s)) {
             this.emitMouse(stream, s);
@@ -422,6 +423,7 @@ export default new class Keys {
      * @param s The data
      */
     emitMouse(stream: KeyStream, s: string) {
+        console.error(s);
         const escs = s.split('\x1b[<').filter(i => i.length > 0);
         for (const e of escs) {
             let a;

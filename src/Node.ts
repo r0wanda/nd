@@ -1,59 +1,72 @@
-import type Screen from './Screen.js';
-import Element from './Element.js';
 import { EventEmitter } from 'events';
 
 /**
- * Miscellaneous data to be stored with a Node
+ * 
  */
-export interface NodeData {
-    [key: string]: any;
+export interface NodeOpts {
+    parent?: Node;
+    children?: Node[];
 }
 
 export type fn<T> = (r: T) => void;
 
 /**
- * The base node, which is extended by Element and Screen. Very little functionality, mainly parent, children, and screen.
+ * Events:
+ * 
+ * remove: Removed from parent
+ * @param parent Old parent
+ * 
+ * reparent: Parent changed
+ * @param oldParent Old parent
+ * @param parent New parent
+ * 
+ * adopt: Parent added
+ * @param parent New parent
+ * 
+ * move: Node index changed
+ * @param index New index
+ * 
+ * node: Node added
+ * @param node The added node
+ * 
+ * childRemoved: Node removed
+ * @param node The removed node
+ */
+
+/**
+ * The base node, which is extended by Element and Screen.
  * @abstract
  */
 export default abstract class Node extends EventEmitter {
-    screen?: Screen;
-    parent?: Node;
-    children: Node[];
-    _data?: NodeData;
-    $?: NodeData;
-    type: string;
-    constructor() {
-        super();
-        this.type = 'node';
-        this.children = [];
+    get parent() {
+        return this._parent;
     }
-    pruneNodes(arr: Node[] = this.children): Element[] {
-        return <Element[]><unknown>arr.filter(ch => ch instanceof Element);
-    }
-    /**
-     * Add node to screen
-     * @param scr The screen to add
-     * @returns 
-     */
-    setScreen(scr?: Screen, nodeAdded = false): number {
-        // screen cant have a screen duhrrr
-        if (this.type === 'screen') return -1;
-        this.screen = scr;
-        if (!nodeAdded) this.screen?.append(this);
-        if (scr) this.emit('attach', scr);
-        else this.emit('detach');
-        return scr ? scr.children.length : -1;
-    }
-    removeScreen() {
-        // screen is undefined now :)
-        this.setScreen();
-    }
-    setParent(parent?: Node) {
-        const p = this.parent;
-        this.parent = parent;
+    set parent(parent: typeof this['_parent'] | undefined) {
+        if (!(parent instanceof Node)) parent = undefined;
+        const p = this._parent;
+        this._parent = parent;
         if (!parent && p) this.emit('remove', p);
         else if (parent && p) this.emit('reparent', parent, p);
         else if (parent) this.emit('adopt', parent);
+    }
+    _parent?: Node;
+    children: Node[];
+    _data?: Record<string | symbol, any>;
+    $?: Record<string | symbol, any>;
+    type: string;
+    constructor(opts?: NodeOpts) {
+        super();
+        opts = typeof opts === 'object' ? opts : {};
+        this._data = {};
+        this.$ = {};
+        this.type = 'node';
+        if (!Array.isArray(opts.children)) opts.children = undefined;
+        if (!(opts.parent instanceof Node)) opts.parent = undefined;
+        this.children = opts.children ?? [];
+        if (opts.parent) this.parent = opts.parent;
+    }
+    setParent(parent?: Node) {
+        this.parent = parent;
     }
     removeParent() {
         this.setParent();
@@ -61,100 +74,104 @@ export default abstract class Node extends EventEmitter {
     /**
      * Prepend node to the beginning of children
      * @param node The node to prepend
-     * @param throwOnInvalid Whether or not to throw on invalid type
+     * @param move Move the node (if node is already added)
      */
-    prepend(node: Node, throwOnInvalid = false) {
-        if (!(node instanceof Node)) {
-            if (throwOnInvalid) throw new Error('Node is invalid (editing children)');
-            else return;
+    prepend(node: Node, move = false) {
+        if (!(node instanceof Node)) return;
+        if (move) {
+            const i = this.children.indexOf(node);
+            if (i < 0) move = false;
+            else this.children.splice(i, 1);
         }
         this.children.unshift(node);
-        this.emit('_node', node);
+        if (move) node.emit('move', 0);
+        else {
+            this.emit('node', node);
+            node.parent = this;
+        }
     }
     prep = this.prepend;
     unshift = this.prepend;
     /**
      * Append node to the end of children
      * @param node The node to append
-     * @param throwOnInvalid Whether or not to throw on invalid type
+     * @param move Move the node (if node is already added)
      */
-    append(node: Node, throwOnInvalid = false) {
-        if (!(node instanceof Node)) {
-            if (throwOnInvalid) throw new Error('Node is invalid (editing children)');
-            else return;
+    append(node: Node, move = false) {
+        if (!(node instanceof Node)) return;
+        if (move) {
+            const i = this.children.indexOf(node);
+            if (i < 0) move = false;
+            else this.children.splice(i, 1);
         }
         this.children.push(node);
-        this.emit('_node', node);
+        if (move) node.emit('move', this.children.length - 1);
+        else {
+            this.emit('node', node);
+            node.parent = this;
+        }
     }
     push = this.append;
     /**
      * Remove node from children
      * @param node The node to remove
-     * @param throwOnInvalid Whether or not to throw on invalid node or type
-     * @param throwOnInvalidNode Whether or not to throw on invalid node (specifically)
-     * @param throwOnInvalidType Whether or not to throw on invalid type (specifically)
      */
-    remove(node: Node, throwOnInvalid = false, throwOnInvalidNode = false, throwOnInvalidType = false) {
-        if (!(node instanceof Node)) {
-            if (throwOnInvalid || throwOnInvalidType) throw new Error('Node is invalid (editing children)');
-            else return;
-        }
+    remove(node: Node) {
+        if (!(node instanceof Node)) return;
         const i = this.children.indexOf(node);
         if (i < 0) {
-            if (throwOnInvalidNode || throwOnInvalid) throw new Error('Invalid node (removing child)');
-            else return;
+            return;
         }
         this.children.splice(i, 1);
-        this.emit('_node', node);
+        node.removeParent();
+        this.emit('childRemoved', node);
     }
     delete = this.remove;
     /**
      * Insert node into children at a specific index
+     * @remarks If index is less than zero, it will be treated as zero. If index is >= children.length, it will be treated as children.length
      * @param node The node to insert
      * @param i The index to insert into
-     * @param throwOnInvalid Whether or not to throw an error if the index or type is invalid
-     * @param acceptInvalidIndexes Whether or not to accept indexes greater (or less than) than the length of children
-     * @param throwOnInvaidIndexes Whether or not to throw an error if the index (specifically) is invalid
+     * @param move Move the node (if node is already added)
      */
-    insert(node: Node, i: number, throwOnInvalid = false, acceptInvalidIndexes = true, throwOnInvaidIndexes = false, throwOnInvalidType = false): void {
-        if (!(node instanceof Node)) {
-            if (throwOnInvalid || throwOnInvalidType) throw new Error('Node is invalid (editing children)');
-            else return;
+    insert(node: Node, i: number, move = false): void {
+        if (!(node instanceof Node)) return;
+        if (move) {
+            const i = this.children.indexOf(node);
+            if (i < 0) move = false;
+            else this.children.splice(i, 1);
         }
-        if (i > this.children.length - 1 && acceptInvalidIndexes) this.append(node);
-        else if (i < 0 && acceptInvalidIndexes) this.prepend(node);
-        else if (!acceptInvalidIndexes && (i < 0 || i > this.children.length - 1)) {
-            if (throwOnInvalid || throwOnInvaidIndexes) throw new Error('Invalid index (inserting child)');
-            else return;
-        } else this.children.splice(i, 0, node);
-        this.emit('_node', node);
+        if (i >= this.children.length) this.append(node);
+        else if (i < 0) this.prepend(node);
+        else this.children.splice(i, 0, node);
+        if (move) node.emit('move', i);
+        else {
+            this.emit('node', node);
+            node.parent = this;
+        }
     }
     /**
      * Insert node into children before a certain node
      * @param node The node to insert
      * @param ref The node to insert before
-     * @param throwOnInvalid Whether or not to throw an error if the index or type is invalid
-     * @param acceptInvalidIndexes Whether or not to accept indexes greater than the length of children
-     * @param throwOnInvaidIndexes Whether or not to throw an error if the index (specifically) is invalid
+     * @param move Move the node (if node is already added)
      */
-    insertBefore(node: Node, ref: Node, throwOnInvalid = false, acceptInvalidIndexes = true, throwOnInvaidIndexes = false, throwOnInvalidType = false): void {
+    insertBefore(node: Node, ref: Node, move = false): void {
         const idx = this.children.indexOf(ref);
         if (idx < 0) throw new Error('Could not find reference node (inserting child)');
-        this.insert(node, idx, throwOnInvalid, acceptInvalidIndexes, throwOnInvaidIndexes, throwOnInvalidType);
+        this.insert(node, idx, move);
     }
     insertBef = this.insertBefore;
     /**
      * Insert node into children after a certain node
      * @param node The node to insert
      * @param ref The node to insert after
-     * @param throwOnInvalid Whether or not to throw an error if the index or type is invalid
-     * @param acceptInvalidIndexes Whether or not to accept indexes greater than the length of children
-     * @param throwOnInvaidIndexes Whether or not to throw an error if the index (specifically) is invalid
+     * @param move Move the node (if node is already added)
      */
-    insertAfter(node: Node, ref: Node, throwOnInvalid = false, acceptInvalidIndexes = true, throwOnInvaidIndexes = false, throwOnInvalidType = false): void {
+    insertAfter(node: Node, ref: Node, move = false): void {
         const idx = this.children.indexOf(ref);
         if (idx < 0) throw new Error('Could not find reference node (inserting child)');
-        this.insert(node, idx + 1, throwOnInvalid, acceptInvalidIndexes, throwOnInvaidIndexes, throwOnInvalidType);
+        this.insert(node, idx + 1, move);
     }
     insertAft = this.insertAfter;
     /**
@@ -179,5 +196,13 @@ export default abstract class Node extends EventEmitter {
      */
     emitDescendantsExSelf(ev: string, ...args: any[]) {
         for (const c of this.children) c.emitDescendants(ev, ...args);
+    }
+    /**
+     * Check if listener for event exists on this node
+     * @param ev Event name
+     * @param fn Event listener
+     */
+    hasListener(ev: string | symbol, fn: (...args: any[]) => void) {
+        return this.listeners(ev).includes(fn);
     }
 }

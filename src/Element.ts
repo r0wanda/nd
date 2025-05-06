@@ -193,6 +193,10 @@ export interface Label {
      */
     color?: Color_t;
     /**
+     * The background for the label
+     */
+    bg?: Color_t;
+    /**
      * The padding on either side of the label
      * Minimum value: 2
      * @default 2
@@ -251,13 +255,13 @@ export interface StyleReq extends Style {
 
 export interface ElementOptions {
     /**
-     * Parent Node
+     * Parent Element
      */
-    parent?: Node;
+    parent?: Element;
     /**
      * Screen Node
      */
-    screen?: Node
+    screen?: Screen
     /**
      * Children of element
      */
@@ -472,6 +476,11 @@ export interface ElementOptions {
      * Whether or not to strip ansi escape codes when setting content
      */
     stripAnsi?: boolean;
+    /**
+     * The width in this element (overrides screen)
+     * @default screen.opts.tabSize
+     */
+    tabSize?: number;
 }
 export type OptionsNoStyle = Omit<ElementOptions, 'fg' | 'bg' | 'style' | 'border' | 'position' | 'scroll' | 'drag' | 'parent' | 'screen' | 'children'>
 export interface Percentage {
@@ -484,10 +493,6 @@ export interface ElementKeyOptions extends KeyOptions {
      * @remarks Equivalent to Element.screen.key
      */
     global?: boolean;
-    /**
-     * Focus
-     */
-    focus: 
 }
 
 /**
@@ -509,11 +514,6 @@ export interface Tag {
 }
 
 //const _Node: new <E extends ListenerSignature<E> = ListenerSignature<unknown>>() => Omit<Node, 'parent' | 'children'> = Node;
-
-export default interface Element {
-    _genContent(ret: true, color?: Color): Mat;
-    _genContent(ret: false, color?: Color): undefined;
-}
 
 export type ArrayEditAdd = 'prepend' | 'prep' | 'unshift' |
     'append' | 'push' |
@@ -544,7 +544,6 @@ export type UserSize = {
     [K in keyof Size]: Keyword;
 }
 
-
 /**
  * The base Element class, which all other rendered objects descend from.
  * @abstract
@@ -572,10 +571,11 @@ export default class Element extends Node {
      */
     abottom: number;
     // element parents/children can only be elements. node is only there for child support (support for append, prepend, insert children etc)
-    // the only class that is a node and not an element is screen, bc width/height &stuff work differently
-    parent?: Element;
-    children: Element[];
+    // the only class that is a node and not an element is screen
+    declare _parent?: Element;
+    declare children: Element[];
     scrollPos: number;
+    screen?: Screen;
     // yippee a bunch of (nearly) identical getters/setters
     get content(): string {
         return this._content;
@@ -671,13 +671,22 @@ export default class Element extends Node {
     /**
      * Processed and usable options object
      */
-    opts: Required<OptionsNoStyle>;
+    opts: Required<Omit<OptionsNoStyle, 'tabSize'>> & { tabSize?: number; };
     /**
      * Computed styles
      * @remarks Before editing something here, look for a helper function which could make things easier
      */
     style: StyleReq;
-    index: number;
+    get index() {
+        return this._index;
+    }
+    /**
+     * Insert at certain index
+     */
+    set index(idx: number) {
+        this.screen?.insert(this, idx);
+    }
+    _index: number;
     contentMat: Mat;
     renderMat?: Mat;
     static nPer = {
@@ -689,22 +698,28 @@ export default class Element extends Node {
     #preProcessStack: ((m: Mat, ...args: any[]) => Mat)[];
     #resizeListener: () => void;
     constructor(opts: ElementOptions) {
-        super();
+        super({
+            parent: opts.parent instanceof Element ? opts.parent : undefined,
+            children: opts.children
+        });
         this.type = 'element';
         this.options = opts;
-        this.parent = opts.parent instanceof Element ? opts.parent : undefined;
         this.#resizeListener = function(this: Element) {
             this._calcPos();
         }.bind(this);
         this.on('attach', (n: Node) => {
             if (n instanceof Screen) {
-                if (!n.listeners('resize').includes(this.#resizeListener)) n.on('resize', this.#resizeListener);
+                if (!n.hasListener('resize', this.#resizeListener)) n.on('resize', this.#resizeListener);
             }
         });
-        if (opts.screen instanceof Screen) this.index = this.setScreen(opts.screen);
-        else if (this.parent?.screen instanceof Screen) this.index = this.setScreen(this.parent.screen);
-        else this.index = -1
-        this.children = opts.children && Array.isArray(opts.children) && opts.children.length > 0 ? opts.children : [];
+        this.on('detach', (n: Node) => {
+            if (n instanceof Screen) {
+                if (n.hasListener('resize', this.#resizeListener)) n.off('resize', this.#resizeListener);
+            }
+        })
+        if (opts.screen instanceof Screen) this._index = this.setScreen(opts.screen);
+        else if (this.parent?.screen instanceof Screen) this._index = this.setScreen(this.parent.screen);
+        else this._index = -1;
         this.#preProcessStack = [];
         this.opts = {
             bold: opts.bold ?? false,
@@ -732,8 +747,10 @@ export default class Element extends Node {
             tags: opts.tags ?? true,
             resize: opts.resize ?? true,
             dock: opts.dock ?? true,
-            stripAnsi: opts.stripAnsi ?? false
+            stripAnsi: opts.stripAnsi ?? false,
+            tabSize: opts.tabSize
         }
+        this.opts.tabSize 
         const fg = tc(opts.style?.fg ?? opts.fg);
         const bg = tc(opts.style?.bg ?? opts.bg);
         this.style = {
@@ -783,6 +800,23 @@ export default class Element extends Node {
         this.on('position', () => {
             this.screen?._reloadHover();
         });
+    }
+    /**
+     * Add node to screen
+     * @param scr The screen to add
+     * @param nodeAdded If node was already added to screen
+     * @returns 
+     */
+    setScreen(scr?: Screen, nodeAdded = false): number {
+        this.screen = scr;
+        if (!nodeAdded) this.screen?.append(this);
+        if (scr) this.emit('attach', scr);
+        else this.emit('detach');
+        return scr ? scr.children.length : -1;
+    }
+    removeScreen() {
+        // screen is undefined now :)
+        this.setScreen();
     }
     /**
      * Set content (reccomended to just set the "content" property unless using ansi strip)
@@ -900,6 +934,9 @@ export default class Element extends Node {
      */
     getPreProcess() {
         return this.#preProcessStack;
+    }
+    moveToFront() {
+        this.screen?.append(this, true);
     }
     /**
      * Calculate position
@@ -1060,6 +1097,8 @@ export default class Element extends Node {
      * @returns An array of tag objects
      */
     _parseTags(s: string): Tag[] {
+        const tab = ' '.repeat(this.opts.tabSize ?? this.screen?.opts.tabSize ?? 4);
+        s = s.replace(/\t/g, tab);
         if (!this.opts.tags) {
             const tags = [];
             // see: https://en.wikipedia.org/wiki/Newline#Representation
@@ -1156,21 +1195,23 @@ export default class Element extends Node {
      * Generate a Mat from the content
      * @internal
      */
-    _genContent(ret = false, color = this.screen?._color) {
+    _genContent<R extends boolean>(ret?: R, width?: number, height?: number, color = this.screen?._color): R extends true ? Mat : undefined {
+        width = width ?? this.width;
+        height = height ?? this.height;
         const style = this._mergeStyle();
         // main mat
-        const m = new Mat(this.width, this.height, '');
-        if (!color) return;
+        const m = new Mat(width, height, '');
+        if (!color) color = new Color();
 
         // render
         const tags = this._parseTags(this.content);
         // set padding (nice for implementing border and scrollbar)
         // math.max will choose specified padding if it is both defined and bigger than 1, else it will default to 1
-        // if no border exists, border padding will be 0 (hence it not existing)
+        // if no border exists, border padding will be 0
         // final note: border padding is applied equally to all sides
         let bdpad = style.border ? Math.max(style.border.padding || 1, 1) : 0;
         const hpad = this.padding.t + this.padding.b + (bdpad * 2);
-        let scrlpad = this.contentHeight > this.height - hpad ? Number(!!this.opts.scrollable) : 0;
+        let scrlpad = this.contentHeight > height - hpad ? Number(!!this.opts.scrollable) : 0;
 
         // checks
         if (isNaN(scrlpad)) scrlpad = 0;
@@ -1182,8 +1223,8 @@ export default class Element extends Node {
         const tpad = this.padding.t + bdpad;
 
         // usable content mat
-        if (this.width - wpad < 0 || this.height - hpad < 0) throw new Error('Element padding (including border) may not exceed width or height');
-        const c = new Mat(this.width - wpad, this.height - hpad, '');
+        if (width - wpad < 0 || height - hpad < 0) throw new Error('Element padding (including border) may not exceed width or height');
+        const c = new Mat(width - wpad, height - hpad, '');
         this.wport = c.x;
         this.hport = c.y;
         // calculate the valign
@@ -1223,7 +1264,7 @@ export default class Element extends Node {
         let bg = style.bg || 'default';
         let bold = this.opts.bold;
         let ul = this.opts.underline;
-        let al = this.opts.align;
+        let al = this.opts.align ?? 'left';
         let regen = false;
 
         /**
@@ -1231,34 +1272,27 @@ export default class Element extends Node {
          * @param idx 
          */
         function finalizeAlign(idx: number) {
-            /**
-             * is seperator coming up in line
-             * @param idx index
-             * @returns 
-             */
-            function upcomingSep(idx: number) {
-                for (let i = ++idx; i < tags.length; i++) {
-                    const t = tags[i];
-                    if (t.type === 'newline') break;
-                    else if (t.type === '|') return true;
+            let a: 'left' | 'right' | 'center' | 'middle';
+            a = <typeof a><unknown>undefined;
+            // is seperator coming up
+            for (let i = ++idx; i < tags.length; i++) {
+                const t = tags[i];
+                if (t.type === 'newline') break;
+                else if (t.type === '|') {
+                    a = 'left';
+                    break;
                 }
-                return false;
             }
-            /**
-             * have we passed a seperator
-             * @param idx you get the idea
-             * @returns 
-             */
-            function prevSep(idx: number) {
-                if (idx < 1) return false;
+            if (!a || idx < 1) {
+                // has a seperator been passed
+                // TODO: maybe optimize (eg. store seperator place(s))
                 for (let i = --idx; i > 0; i--) {
                     const t = tags[i];
                     if (t.type === 'newline') break;
-                    else if (t.type === '|') return true;
+                    else if (t.type === '|') a = 'right';
                 }
-                return false;
             }
-            const a = upcomingSep(idx) ? 'left' : (prevSep(idx) ? 'right' : al);
+            if (!a) a = al;
             let l = 0;
             let nope = false;
             for (let i = idx; i < tags.length; i++) {
@@ -1370,9 +1404,7 @@ export default class Element extends Node {
         }
         m.overlay(lpad, t + tpad, c);
         // apply border
-        {
-            if (m.x < 1 || m.y < 1) return m;
-            if (!style.border || !color) return m;
+        if (m.x >= 1 && m.y >= 1 && style.border) {
             const lType = style.border.lineType;
             let bd: Border_t;
             if (style.border.type === 'bg') {
@@ -1411,6 +1443,7 @@ export default class Element extends Node {
             const side = this.style.label?.side || this.style.label?.align || 'left';
             const text = this.opts.label;
             const col = this.style.label?.color || 'default';
+            const lBg = this.style.label?.bg || 'default';
             let x = Math.max(this.style.label?.padding || 2, 1);
 
             // calc offset
@@ -1419,32 +1452,31 @@ export default class Element extends Node {
                 case 'middle':
                     x = this.calcPercentage({
                         percent: 50,
-                        offset: - length(text) / 2
+                        offset: - (length(text) / 2)
                     }, 'w', this);
                     break;
                 case 'right':
-                    x = this.width - 2 - length(text);
+                    x = width - x - length(text);
                     break;
             }
-            x = Math.max(2, x) + 1;
             let val = '';
             let len = 0;
             for (const c of text.split('')) {
-                if (x > this.width - 2) break;
+                if (x > width - 2) break;
                 len += length(c);
                 val += c;
                 if (len < 1) continue;
-                m.xy(x, 0, `${color.parse(col, false)}${color.parse(bg, true)}${val}\x1b[0m`);
+                m.xy(x, 0, `${color.parse(col, false)}${color.parse(lBg, true)}${val}\x1b[0m`);
                 //console.error(x, `${color.parse(col, false)}${color.parse(bg, true)}${val}\x1b[0m`);
                 x += len;
                 len = 0;
                 val = '';
             }
-            return m;
         }
 
-        if (ret) return m;
+        if (ret) return <R extends true ? Mat : undefined>m;
         else this.contentMat = m;
+        return <R extends true ? Mat : undefined>undefined;
     }
     render() {
         const style = this._mergeStyle();
@@ -1460,11 +1492,7 @@ export default class Element extends Node {
         // eg. whether or not to set contentmat to resized version, make duplicate contentmat that's rendered normally?
         if (width + this.aleft > this.screen.width) {
             width = this.screen.width - this.aleft;
-            if (this.opts.resize) contentMat = this._genContent.bind({
-                ...this,
-                width,
-                height
-            })(true);
+            if (this.opts.resize) contentMat = this._genContent(true, width, height);
         }
         if (!contentMat) {
             this._genContent();
